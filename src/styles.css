@@ -37,5 +37,24 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 }
 
 .title { font-size: 22px; font-weight: 700; margin: 0; }
-.muted { color: var(--muted); margin: 0; }
 .version { color: var(--muted); font-size: 13px; }
+
+.status { color: var(--muted); margin: 0; }
+.status.on { color: var(--accent); }
+
+.key {
+  width: 100%; max-width: 420px; resize: none;
+  background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px; font: 13px/1.4 ui-monospace, "Roboto Mono", monospace; user-select: text;
+}
+.key:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
+.key:disabled { color: var(--muted); }
+
+.connect {
+  width: 100%; max-width: 420px; min-height: 52px; border-radius: 14px;
+  background: var(--accent); color: #0b1a12; font-weight: 700; font-size: 16px;
+}
+.connect.on { background: var(--raised); color: var(--text); border: 1px solid var(--border); }
+.connect:disabled { opacity: 0.6; }
+
+.error { color: var(--danger); margin: 0; max-width: 420px; overflow-wrap: anywhere; }
