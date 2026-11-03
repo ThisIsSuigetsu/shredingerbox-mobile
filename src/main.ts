@@ -83,7 +83,7 @@ type Modal =
   | { kind: "add-sites"; list: SiteList; text: string }
   | { kind: "update"; info: UpdateInfo; busy: boolean };
 
-/** Порт локального прокси — settings.rs::PROXY_PORT. */
+/** Порт локального прокси - settings.rs::PROXY_PORT. */
 const PROXY = "127.0.0.1:2080";
 
 /** Карточки, которые сворачиваются нажатием на заголовок. */
@@ -93,7 +93,7 @@ const FOLD_KEYS: Record<Fold, string> = {
   log: "shredingerbox.logFolded",
 };
 
-/** Удобства одного телефона в localStorage: может быть недоступен — тогда просто по умолчанию. */
+/** Удобства одного телефона в localStorage: может быть недоступен - тогда просто по умолчанию. */
 function readFlag(key: string): boolean {
   try {
     return localStorage.getItem(key) === "1";
@@ -118,15 +118,15 @@ const st = {
   pings: {} as Record<string, Ping>,
   pinging: false,
   presets: [] as Preset[],
-  /** Установленные приложения — загружаются, когда впервые нужны правилам. */
+  /** Установленные приложения - загружаются, когда впервые нужны правилам. */
   apps: null as AppInfo[] | null,
   modal: null as Modal | null,
   siteTab: "proxy_domains" as SiteList,
   log: "",
-  /** null — ещё не проверяли, false — обновлений нет. */
+  /** null - ещё не проверяли, false - обновлений нет. */
   update: null as UpdateInfo | false | null,
   checkingUpdate: false,
-  /** Свёрнутые карточки — запоминаются на этом телефоне. */
+  /** Свёрнутые карточки - запоминаются на этом телефоне. */
   folded: { mode: readFlag(FOLD_KEYS.mode), log: readFlag(FOLD_KEYS.log) } as Record<Fold, boolean>,
   /** Расход по серверам за текущий месяц и скорость. */
   usage: { month: "", servers: {}, speed: { up: 0, down: 0 } } as MonthTraffic,
@@ -223,7 +223,7 @@ async function refreshUsage() {
   if (month) month.textContent = monthText();
 }
 
-/** «1,2 ГБ за ноябрь» — расход текущего сервера. */
+/** «1,2 ГБ за ноябрь» - расход текущего сервера. */
 function monthText(): string {
   const srv = selectedServer();
   const short = srv ? usageShort(srv.id) : "";
@@ -235,7 +235,7 @@ function pingView(id: string): string {
   if (!p) return "";
   if (p.udp) return `<span class="ping muted">UDP</span>`;
   if (p.ms == null) return `<span class="ping bad">нет ответа</span>`;
-  // Через VPN задержка складывается из двух плеч — порог выше.
+  // Через VPN задержка складывается из двух плеч - порог выше.
   const good = p.via_vpn ? 300 : 120;
   const cls = p.ms <= good ? "good" : p.ms <= good * 2.5 ? "slow" : "bad";
   return `<span class="ping ${cls}">${p.ms} мс</span>`;
@@ -299,11 +299,11 @@ function siteStats(list: SiteList, text: string): { add: string[]; dup: number }
 }
 
 function statsText(x: { add: string[]; dup: number }): string {
-  if (!x.add.length && !x.dup) return "Вставьте адреса сайтов — через пробел, запятую или с новой строки";
+  if (!x.add.length && !x.dup) return "Вставьте адреса сайтов - через пробел, запятую или с новой строки";
   return `Будет добавлено: ${x.add.length}` + (x.dup ? ` · дубликатов пропущено: ${x.dup}` : "");
 }
 
-/** «ключ «Германия»», «3 ключа», «подписка с panel.example.org» — без самих секретов. */
+/** «ключ «Германия»», «3 ключа», «подписка с panel.example.org» - без самих секретов. */
 function clipSummary(text: string): string {
   if (/^https?:\/\//i.test(text)) {
     try {
@@ -319,7 +319,7 @@ function clipSummary(text: string): string {
   try {
     name = hash >= 0 ? decodeURIComponent(lines[0].slice(hash + 1)) : "";
   } catch {
-    // Кривое имя — покажем без него.
+    // Кривое имя - покажем без него.
   }
   return name ? `ключ «${name}»` : `ключ ${lines[0].split("://")[0]}://…`;
 }
@@ -375,7 +375,7 @@ function homeView(): string {
     : "Добавьте сервер, чтобы подключиться";
   const servers = s.servers.length
     ? s.servers.map((x) => serverRow(x, false)).join("")
-    : `<div class="empty">Серверов пока нет. Вставьте ключ <span class="mono">vless://</span>, <span class="mono">hy2://</span> или ссылку на подписку — их присылает тот, кто дал вам VPN.</div>`;
+    : `<div class="empty">Серверов пока нет. Вставьте ключ <span class="mono">vless://</span>, <span class="mono">hy2://</span> или ссылку на подписку - их присылает тот, кто дал вам VPN.</div>`;
   const modeOpt = (m: Mode, t: string) =>
     `<button class="${s.mode === m ? "on" : ""}" data-action="set-mode" data-mode="${m}" aria-pressed="${s.mode === m}">${t}</button>`;
   return `<header class="brand">${mascot(40, mood())}<span>ShredingerBox</span></header>
@@ -394,8 +394,8 @@ function homeView(): string {
       ${st.folded.mode ? "" : `
       <div class="seg" role="group" aria-label="Режим">${modeOpt("tun", "TUN")}${modeOpt("proxy", "Прокси")}</div>
       ${s.mode === "tun"
-        ? `<p class="card-hint">VPN для всего телефона — по правилам.</p>`
-        : `<div class="hint">${icon.info}<span>Без VPN: через прокси <b class="mono">${PROXY}</b> ходят только приложения, где он указан, — например, Telegram → Данные и память → Прокси (SOCKS5 или HTTP), или настройки Wi-Fi. Остальные идут напрямую.</span></div>`}`}
+        ? `<p class="card-hint">VPN для всего телефона - по правилам.</p>`
+        : `<div class="hint">${icon.info}<span>Без VPN: через прокси <b class="mono">${PROXY}</b> ходят только приложения, где он указан, - например, Telegram → Данные и память → Прокси (SOCKS5 или HTTP), или настройки Wi-Fi. Остальные идут напрямую.</span></div>`}`}
     </section>
     <section class="card">
       <div class="card-head"><h2>Серверы</h2>${s.servers.length ? `<button class="link-btn" data-action="ping" ${st.pinging ? "disabled" : ""}>${st.pinging ? "Меряем…" : "Проверить пинг"}</button>` : ""}</div>
@@ -438,7 +438,7 @@ function serversView(): string {
   return `<div class="page-head">
       <h1>Серверы</h1>
       <p>Пока VPN включён, пинг меряется через туннель, а переключение мгновенное.
-        Рядом с сервером — расход трафика за ${esc(monthName(st.usage.month))}.</p>
+        Рядом с сервером - расход трафика за ${esc(monthName(st.usage.month))}.</p>
       <div class="row">
         ${s.servers.length ? `<button class="btn-ghost" data-action="ping" ${st.pinging ? "disabled" : ""}>${st.pinging ? "Меряем…" : "Проверить пинг"}</button>` : ""}
         <button class="btn-light" data-action="open-add-server">Добавить</button>
@@ -482,7 +482,7 @@ function rulesView(): string {
       <p>Что идёт через VPN, а что напрямую</p>
     </div>
     ${st.settings.mode === "proxy"
-      ? `<div class="hint warn">${icon.info}<span>Сейчас режим «Прокси»: правила для приложений не действуют — без VPN Android не говорит, какое приложение открыло соединение. Правила для сайтов работают.</span></div>`
+      ? `<div class="hint warn">${icon.info}<span>Сейчас режим «Прокси»: правила для приложений не действуют - без VPN Android не говорит, какое приложение открыло соединение. Правила для сайтов работают.</span></div>`
       : ""}
     <section class="card">
       <h2>Остальной трафик</h2>
@@ -492,10 +492,10 @@ function rulesView(): string {
       </div>
       <p class="card-hint">${r.final_route === "proxy"
         ? "Через VPN идёт всё, кроме того, что ниже отмечено «напрямую»."
-        : "Через VPN идёт только то, что указано ниже, — остальное напрямую, как без VPN."}</p>
+        : "Через VPN идёт только то, что указано ниже, - остальное напрямую, как без VPN."}</p>
     </section>
     ${appCard("proxy_apps", false, "Весь трафик этих приложений идёт через VPN.")}
-    ${appCard("direct_apps", true, "Эти приложения ходят мимо VPN и не видят его — удобно для банков.")}
+    ${appCard("direct_apps", true, "Эти приложения ходят мимо VPN и не видят его - удобно для банков.")}
     <section class="card tight">
       <div class="card-head"><div class="row"><span class="dot ${tab === "direct_domains" ? "hollow" : ""}"></span><h2>Сайты</h2></div></div>
       <div class="seg inset" role="tablist" aria-label="Какие сайты">${siteTab("proxy_domains", "Через VPN")}${siteTab("direct_domains", "Напрямую")}</div>
@@ -503,9 +503,9 @@ function rulesView(): string {
       <button class="dashed" data-action="open-add-sites">${icon.plus}Добавить сайты</button>
       ${tab === "proxy_domains"
         ? `<div class="sep"></div>
-          <span class="card-hint">Готовые наборы — нажмите, чтобы включить</span>
+          <span class="card-hint">Готовые наборы - нажмите, чтобы включить</span>
           <div class="chips">${presets}</div>`
-        : `<div class="hint">${icon.info}<span>Эти сайты всегда идут напрямую — даже из приложений «через VPN» и готовых наборов. Удобно для банков и госуслуг.</span></div>`}
+        : `<div class="hint">${icon.info}<span>Эти сайты всегда идут напрямую - даже из приложений «через VPN» и готовых наборов. Удобно для банков и госуслуг.</span></div>`}
     </section>`;
 }
 
@@ -550,11 +550,11 @@ function settingsView(): string {
       ${foldHead("log", "Журнал ядра")}
       ${st.folded.log ? "" : `
       <div class="row log-bar">
-        <p class="card-hint">Записи sing-box — пригодятся, если что-то не работает.</p>
+        <p class="card-hint">Записи sing-box - пригодятся, если что-то не работает.</p>
         <button class="x-btn" data-action="log-refresh" aria-label="Обновить журнал">${icon.refresh}</button>
         <button class="link-btn" data-action="log-copy">Скопировать</button>
       </div>
-      <pre class="code" id="log-text">${esc(st.log || "Журнал пуст — подключитесь, и здесь появятся записи ядра.")}</pre>`}
+      <pre class="code" id="log-text">${esc(st.log || "Журнал пуст - подключитесь, и здесь появятся записи ядра.")}</pre>`}
     </section>`;
 }
 
@@ -587,7 +587,7 @@ function modalView(): string {
     body = `${head("Добавить серверы")}
       <div class="modal-body">
         <textarea class="field" id="modal-text" rows="5" spellcheck="false" autocomplete="off"
-          placeholder="Ключи vless://, hy2://, trojan://, ss:// — по одному на строку, или ссылка на подписку https://…">${esc(m.text)}</textarea>
+          placeholder="Ключи vless://, hy2://, trojan://, ss:// - по одному на строку, или ссылка на подписку https://…">${esc(m.text)}</textarea>
         <button class="dashed" data-action="scan-qr">${icon.qr}Сканировать QR-код</button>
       </div>
       <div class="modal-foot"><button class="btn-ghost" data-action="close-modal">Отмена</button><span class="grow"></span>
@@ -619,7 +619,7 @@ function modalView(): string {
     body = `${head(LIST_TITLE[m.list])}
       <div class="modal-body">
         <textarea class="field" id="modal-text" rows="5" spellcheck="false" autocomplete="off" autocapitalize="off"
-          placeholder="example.com, discord.gg — можно сразу списком">${esc(m.text)}</textarea>
+          placeholder="example.com, discord.gg - можно сразу списком">${esc(m.text)}</textarea>
         <span class="card-hint" id="site-stats">${esc(statsText(siteStats(m.list, m.text)))}</span>
       </div>
       <div class="modal-foot"><button class="btn-ghost" data-action="close-modal">Отмена</button><span class="grow"></span>
@@ -634,7 +634,7 @@ function render() {
   const page = { home: homeView, servers: serversView, rules: rulesView, settings: settingsView }[st.view]();
   const tab = (v: View, label: string, ic: string) =>
     `<button class="tab ${st.view === v ? "on" : ""}" data-action="nav" data-view="${v}" aria-current="${st.view === v ? "page" : "false"}">${ic}<span>${label}</span></button>`;
-  // Опрос статуса и пинг перерисовывают всё — поле ввода в окне не должно терять фокус.
+  // Опрос статуса и пинг перерисовывают всё - поле ввода в окне не должно терять фокус.
   const active = document.activeElement as HTMLInputElement | null;
   const focusId = active?.id && root.contains(active) ? active.id : "";
   const caret = focusId ? active!.selectionStart : null;
@@ -682,7 +682,7 @@ async function pingAll() {
     const list = await invoke<Ping[]>("ping_servers");
     st.pings = Object.fromEntries(list.map((p) => [p.id, p]));
   } catch {
-    // Пинг — подсказка, а не действие: ошибку не показываем.
+    // Пинг - подсказка, а не действие: ошибку не показываем.
   } finally {
     st.pinging = false;
     render();
@@ -696,7 +696,7 @@ async function poll() {
       st.state = s.state;
       if (st.state === "stopped" && s.error) toast(s.error, true);
       render();
-      // После подключения пинг меряется уже через VPN — реальная задержка.
+      // После подключения пинг меряется уже через VPN - реальная задержка.
       if (st.state === "started" || st.state === "stopped") setTimeout(pingAll, 1500);
     }
     // Пока подключены, счётчик в Rust растёт каждую секунду.
@@ -765,7 +765,7 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
     case "toggle":
       return act(async () => {
         if (st.state === "stopped") {
-          // В режиме «Прокси» VPN не поднимается — разрешение не нужно.
+          // В режиме «Прокси» VPN не поднимается - разрешение не нужно.
           if (st.settings.mode === "tun" && !(await invoke<boolean>("vpn_prepare"))) throw "Без разрешения на VPN подключиться нельзя";
           await invoke("vpn_connect");
           st.state = "starting";
@@ -810,7 +810,7 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
           st.settings = await invoke<Settings>("refresh_subscriptions");
           toast("Подписки обновлены");
         } catch (e) {
-          // Часть подписок могла обновиться — перечитываем то, что сохранилось.
+          // Часть подписок могла обновиться - перечитываем то, что сохранилось.
           st.settings = await invoke<Settings>("get_settings");
           throw e;
         } finally {
@@ -893,7 +893,7 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       const other: AppList = m.list === "proxy_apps" ? "direct_apps" : "proxy_apps";
       const add = (st.apps ?? []).filter((a) => m.picked.has(a.package)).map((a) => ({ name: a.name, package: a.package }));
       st.modal = null;
-      // Приложение может быть только в одном списке — из другого его убираем.
+      // Приложение может быть только в одном списке - из другого его убираем.
       return saveRules((r) => {
         r[m.list] = [...r[m.list], ...add];
         r[other] = r[other].filter((a) => !m.picked.has(a.package));
@@ -917,7 +917,7 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       try {
         const text = await invoke<string | null>("scan_qr");
         if (!text) return;
-        // Код с ключом или подпиской — сразу в поле; добавить можно одной кнопкой.
+        // Код с ключом или подпиской - сразу в поле; добавить можно одной кнопкой.
         m.text = m.text.trim() ? `${m.text.trim()}\n${text.trim()}` : text.trim();
         render();
       } catch (e) {
@@ -960,7 +960,7 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       try {
         localStorage.setItem(FOLD_KEYS[card], st.folded[card] ? "1" : "");
       } catch {
-        // Не запомнится — не страшно.
+        // Не запомнится - не страшно.
       }
       render();
       if (card === "log" && !st.folded.log) loadLog();
@@ -1050,7 +1050,7 @@ root.addEventListener("change", (ev) => {
 
 // ---------- обновления ----------
 
-/** Версия, от которой отказались «Позже», — до перезапуска больше не предлагаем. */
+/** Версия, от которой отказались «Позже», - до перезапуска больше не предлагаем. */
 let updateSnoozed = "";
 
 async function checkUpdate(manual = false) {
@@ -1064,7 +1064,7 @@ async function checkUpdate(manual = false) {
       st.modal = { kind: "update", info, busy: false };
     }
   } catch (e) {
-    // Молча при запуске: нет сети — не повод для ошибки.
+    // Молча при запуске: нет сети - не повод для ошибки.
     if (manual) toast(errText(e), true);
   } finally {
     st.checkingUpdate = false;
@@ -1074,7 +1074,7 @@ async function checkUpdate(manual = false) {
 
 // ---------- буфер обмена ----------
 
-/** Текст из буфера, который уже отклонили, — второй раз не предлагаем. */
+/** Текст из буфера, который уже отклонили, - второй раз не предлагаем. */
 let clipDismissed = "";
 
 async function checkClipboard() {
@@ -1085,11 +1085,11 @@ async function checkClipboard() {
     st.modal = { kind: "clipboard", text, busy: false, from: "clipboard" };
     render();
   } catch {
-    // Буфер недоступен — молча пропускаем.
+    // Буфер недоступен - молча пропускаем.
   }
 }
 
-/** Приложение открыли ссылкой shredingerbox://add?url=… — предлагаем добавить. */
+/** Приложение открыли ссылкой shredingerbox://add?url=… - предлагаем добавить. */
 async function checkLink() {
   try {
     const text = await invoke<string | null>("take_link");
@@ -1097,7 +1097,7 @@ async function checkLink() {
     st.modal = { kind: "clipboard", text, busy: false, from: "link" };
     render();
   } catch {
-    // Нет ссылки — нечего предлагать.
+    // Нет ссылки - нечего предлагать.
   }
 }
 
@@ -1108,13 +1108,13 @@ async function onReturn() {
   await checkClipboard();
 }
 
-// Буфер читается только когда окно в фокусе — проверяем при каждом возвращении в приложение.
+// Буфер читается только когда окно в фокусе - проверяем при каждом возвращении в приложение.
 window.addEventListener("focus", onReturn);
 document.addEventListener("visibilitychange", onReturn);
 
 // ---------- запуск ----------
 
-/** Первая версия хранила один ключ в localStorage — переносим его в настройки. */
+/** Первая версия хранила один ключ в localStorage - переносим его в настройки. */
 async function migrateOldKey() {
   let key = "";
   try {
@@ -1138,7 +1138,7 @@ async function migrateOldKey() {
 }
 
 (async () => {
-  // В обычном браузере (npm run dev) Tauri нет — подставляем демо-данные.
+  // В обычном браузере (npm run dev) Tauri нет - подставляем демо-данные.
   if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) await import("./mock");
   try {
     st.settings = await invoke<Settings>("get_settings");
@@ -1152,7 +1152,7 @@ async function migrateOldKey() {
   setInterval(poll, 1000);
   pingAll();
   refreshUsage();
-  // Сразу после запуска окно может ещё не получить фокус — буфер вернёт пусто.
+  // Сразу после запуска окно может ещё не получить фокус - буфер вернёт пусто.
   setTimeout(onReturn, 700);
   // Буфер обмена важнее: обновление предложим, только если окно ещё свободно.
   setTimeout(checkUpdate, 2500);

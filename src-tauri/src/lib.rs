@@ -1,5 +1,5 @@
 mod config;
-// Копия links.rs десктопа без изменений — часть функций здесь не нужна.
+// Копия links.rs десктопа без изменений - часть функций здесь не нужна.
 #[allow(dead_code)]
 mod links;
 mod presets;
@@ -45,7 +45,7 @@ impl AppState {
 async fn sync_config(app: &AppHandle) {
     let state = app.state::<AppState>();
     let Ok(api) = new_api() else { return };
-    // Серверов ещё нет — подключаться не к чему, старый конфиг не трогаем.
+    // Серверов ещё нет - подключаться не к чему, старый конфиг не трогаем.
     let Ok(config) = build_config(&state.snapshot(), &api) else { return };
     let _ = vpn::call::<_, Value>(app, "saveConfig", json!({ "config": config.to_string() })).await;
 }
@@ -67,7 +67,7 @@ fn new_api() -> Result<config::Api, String> {
     Ok(config::Api { port, secret })
 }
 
-/// Конфиг со всеми серверами: выбранный — по умолчанию в селекторе.
+/// Конфиг со всеми серверами: выбранный - по умолчанию в селекторе.
 fn build_config(s: &Settings, api: &config::Api) -> Result<Value, String> {
     let selected = s.selected_server().ok_or("Добавьте ключ или подписку")?;
     let servers: Vec<(String, Value)> = s
@@ -179,7 +179,7 @@ fn remove_subscription(state: State<AppState>, url: String) -> Result<Settings, 
     Ok(s)
 }
 
-/// Выбрать сервер. Если VPN включён — переключаем прямо в ядре, без переподключения.
+/// Выбрать сервер. Если VPN включён - переключаем прямо в ядре, без переподключения.
 #[tauri::command]
 async fn select_server(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<Settings, String> {
     let mut s = state.snapshot();
@@ -196,7 +196,7 @@ async fn select_server(app: AppHandle, state: State<'_, AppState>, id: String) -
         None => false,
     };
     // Ядро ещё подключается или сервера нет в запущенном конфиге
-    // (добавлен после подключения) — перезапускаем.
+    // (добавлен после подключения) - перезапускаем.
     if !switched {
         restart(&app, &state, &s).await?;
     }
@@ -207,14 +207,14 @@ async fn select_server(app: AppHandle, state: State<'_, AppState>, id: String) -
 struct Ping {
     id: String,
     ms: Option<u64>,
-    /// UDP-протокол (Hysteria2) — TCP-пинг не меряется.
+    /// UDP-протокол (Hysteria2) - TCP-пинг не меряется.
     udp: bool,
     /// Задержка измерена через само ядро (реальный запрос через VPN).
     via_vpn: bool,
 }
 
 /// Пинг серверов. Пока VPN включён, каждый сервер проверяется реальным запросом
-/// через ядро (Hysteria2 тоже); без VPN — TCP-подключением (у Hysteria2 это UDP — не меряем).
+/// через ядро (Hysteria2 тоже); без VPN - TCP-подключением (у Hysteria2 это UDP - не меряем).
 #[tauri::command]
 async fn ping_servers(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<Ping>, String> {
     let api = running_api(&app, &state).await?;
@@ -284,7 +284,7 @@ fn get_presets() -> Vec<presets::Preset> {
     presets::PRESETS.to_vec()
 }
 
-/// Сохранить правила. Если VPN включён — переподключаемся: правила живут в конфиге ядра.
+/// Сохранить правила. Если VPN включён - переподключаемся: правила живут в конфиге ядра.
 #[tauri::command]
 async fn set_rules(app: AppHandle, state: State<'_, AppState>, rules: Rules) -> Result<Settings, String> {
     let mut s = state.snapshot();
@@ -308,7 +308,7 @@ async fn list_apps(app: AppHandle) -> Result<Value, String> {
     Ok(r.apps)
 }
 
-/// TUN или Прокси. Если ядро запущено — переподключаемся в новом режиме.
+/// TUN или Прокси. Если ядро запущено - переподключаемся в новом режиме.
 #[tauri::command]
 async fn set_mode(app: AppHandle, state: State<'_, AppState>, mode: Mode) -> Result<Settings, String> {
     let mut s = state.snapshot();
@@ -342,7 +342,7 @@ struct Supported {
     supported: bool,
 }
 
-/// Предложить добавить плитку в шторку. false — Android старше 13, только вручную.
+/// Предложить добавить плитку в шторку. false - Android старше 13, только вручную.
 #[tauri::command]
 async fn add_tile(app: AppHandle) -> Result<bool, String> {
     let r: Supported = vpn::call(&app, "addTile", ()).await?;
@@ -361,7 +361,7 @@ async fn take_link(app: AppHandle) -> Result<Option<String>, String> {
     Ok(r.text)
 }
 
-/// Отсканировать QR-код. None — сканер закрыли.
+/// Отсканировать QR-код. None - сканер закрыли.
 #[tauri::command]
 async fn scan_qr(app: AppHandle) -> Result<Option<String>, String> {
     let r: Text = vpn::call(&app, "scanQr", ()).await?;
@@ -436,7 +436,7 @@ struct Status {
     state: String,
     /// Почему ядро остановилось, если не по кнопке.
     error: Option<String>,
-    /// Clash API запущенного ядра — интерфейсу не нужен.
+    /// Clash API запущенного ядра - интерфейсу не нужен.
     #[serde(default, skip_serializing)]
     api: Option<RunningApi>,
 }
@@ -509,7 +509,7 @@ pub fn run() {
                 traffic: traffic::Traffic::load(dir.join("traffic.json")),
                 app: app.handle().clone(),
             });
-            // Конфиг для плитки и автозапуска — по настройкам, сохранённым до обновления.
+            // Конфиг для плитки и автозапуска - по настройкам, сохранённым до обновления.
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move { sync_config(&handle).await });
             Ok(())

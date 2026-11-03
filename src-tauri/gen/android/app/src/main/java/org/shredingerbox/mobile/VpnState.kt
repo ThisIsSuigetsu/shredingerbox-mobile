@@ -10,7 +10,7 @@ import java.io.File
 
 /**
  * Состояние VPN. Сервис, плитка и автозапуск живут в отдельном процессе «:vpn»,
- * а интерфейс — в основном: Tauri завершает основной процесс, когда закрывают окно,
+ * а интерфейс - в основном: Tauri завершает основной процесс, когда закрывают окно,
  * и VPN не должен падать вместе с ним. Поэтому состояние хранится в памяти процесса
  * «:vpn» и дублируется в файл, который читает интерфейс.
  */
@@ -29,7 +29,7 @@ object VpnState {
   var error: String? = null
     private set
 
-  /** Clash API запущенного ядра «порт» to «пароль» — Rust подхватывает его по нему. */
+  /** Clash API запущенного ядра «порт» to «пароль» - Rust подхватывает его по нему. */
   @Volatile
   var api: Pair<Int, String>? = null
 
@@ -70,7 +70,7 @@ object VpnState {
       ?: return Snapshot(State.STOPPED, null, null)
     var state = runCatching { State.valueOf(json.optString("state")) }.getOrDefault(State.STOPPED)
     val error = if (json.isNull("error")) null else json.optString("error")
-    // Процесс «:vpn» могли убить (сбой, нехватка памяти) — тогда файл врёт.
+    // Процесс «:vpn» могли убить (сбой, нехватка памяти) - тогда файл врёт.
     // «Подключаемся» сразу после нажатия ещё может не застать службу запущенной.
     val fresh = System.currentTimeMillis() - json.optLong("at") < 10_000
     if (state != State.STOPPED && !(state == State.STARTING && fresh) && !serviceRunning(ctx)) {

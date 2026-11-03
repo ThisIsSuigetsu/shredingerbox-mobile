@@ -3,10 +3,10 @@
 # релиз и предложит обновиться.
 #
 # Секреты репозитория (Settings → Secrets and variables → Actions):
-#   ANDROID_KEYSTORE_BASE64   — файл ключа .jks в base64
-#   ANDROID_KEYSTORE_PASSWORD — пароль хранилища
-#   ANDROID_KEY_ALIAS         — имя ключа в хранилище
-#   ANDROID_KEY_PASSWORD      — пароль ключа
+#   ANDROID_KEYSTORE_BASE64   - файл ключа .jks в base64
+#   ANDROID_KEYSTORE_PASSWORD - пароль хранилища
+#   ANDROID_KEY_ALIAS         - имя ключа в хранилище
+#   ANDROID_KEY_PASSWORD      - пароль ключа
 name: Release
 # Без этого в списке Actions сборка называется по сообщению последнего коммита.
 run-name: ShredingerBox ${{ github.ref_name }}
@@ -32,8 +32,8 @@ jobs:
             exit 1
           fi
 
-      # Описание релиза: раздел этой версии из CHANGELOG.md — его же приложение показывает
-      # в окне обновления, — и инструкция для первой установки (окно обновления её отрезает).
+      # Описание релиза: раздел этой версии из CHANGELOG.md - его же приложение показывает
+      # в окне обновления, - и инструкция для первой установки (окно обновления её отрезает).
       - name: Описание релиза из CHANGELOG.md
         run: |
           version="${GITHUB_REF_NAME#v}"

@@ -81,7 +81,7 @@ struct Connection {
 }
 
 /// Сколько байтов прибавилось у каждого сервера с прошлого опроса и сколько всего.
-/// `last` — что мы видели у каждого соединения в прошлый раз; закрытые соединения из него убираются.
+/// `last` - что мы видели у каждого соединения в прошлый раз; закрытые соединения из него убираются.
 fn deltas(conns: &[Connection], last: &mut HashMap<String, (u64, u64)>) -> (HashMap<String, Usage>, Usage) {
     let mut out: HashMap<String, Usage> = HashMap::new();
     let mut total = Usage::default();
@@ -115,7 +115,7 @@ pub fn spawn_counter(app: AppHandle, api: crate::config::Api) {
             tokio::time::sleep(Duration::from_secs(1)).await;
             let state = app.state::<crate::AppState>();
             let current = state.api.lock().unwrap().as_ref().map(|a| a.secret.clone());
-            // Ядро ещё запускается — ждём до минуты; после остановки API перестаёт отвечать.
+            // Ядро ещё запускается - ждём до минуты; после остановки API перестаёт отвечать.
             if current.as_deref() != Some(api.secret.as_str()) || fails >= if alive { 3 } else { 60 } {
                 break;
             }

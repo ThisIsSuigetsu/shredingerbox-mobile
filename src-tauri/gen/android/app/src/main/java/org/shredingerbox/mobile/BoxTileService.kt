@@ -21,7 +21,7 @@ class BoxTileService : TileService() {
       VpnState.State.STARTED, VpnState.State.STARTING -> BoxVpnService.stop(this)
       VpnState.State.STOPPING -> {}
       VpnState.State.STOPPED -> {
-        // Разрешение на VPN и первый конфиг даёт только приложение — открываем его.
+        // Разрешение на VPN и первый конфиг даёт только приложение - открываем его.
         if (BoxVpnService.needsPermission(this) || !runCatching { BoxVpnService.startSaved(this) }.getOrDefault(false)) {
           openApp()
         }

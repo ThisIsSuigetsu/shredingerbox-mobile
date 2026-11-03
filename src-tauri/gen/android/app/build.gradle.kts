@@ -25,7 +25,7 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
-    // Ключ подписи релиза приходит из переменных окружения (в GitHub Actions — из секретов).
+    // Ключ подписи релиза приходит из переменных окружения (в GitHub Actions - из секретов).
     // Он один навсегда: APK с другим ключом не встанет поверх установленного.
     val keystore = System.getenv("ANDROID_KEYSTORE_FILE")
     signingConfigs {

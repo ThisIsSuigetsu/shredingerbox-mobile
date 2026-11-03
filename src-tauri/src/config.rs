@@ -32,14 +32,14 @@ fn dedup(mut v: Vec<String>) -> Vec<String> {
     v
 }
 
-/// `servers` — разобранные серверы как (тег, outbound), `selected_tag` — текущий.
+/// `servers` - разобранные серверы как (тег, outbound), `selected_tag` - текущий.
 /// Над ними строится селектор `proxy`, как на десктопе.
 pub fn build(mode: Mode, rules: &Rules, servers: &[(String, Value)], selected_tag: &str, api: &Api) -> Value {
     let mut domains = rules.proxy_domains.clone();
     domains.extend(presets::domains_for(&rules.presets));
     let domains = dedup(domains);
     let direct_domains = dedup(rules.direct_domains.clone());
-    // Без VPN Android не говорит, какое приложение открыло соединение, —
+    // Без VPN Android не говорит, какое приложение открыло соединение, -
     // правила по приложениям работают только в TUN.
     let (proxy_apps, direct_apps): (Vec<&str>, Vec<&str>) = match mode {
         Mode::Tun => (
@@ -56,7 +56,7 @@ pub fn build(mode: Mode, rules: &Rules, servers: &[(String, Value)], selected_ta
 
     // ВАЖНО: правило с пустым списком в sing-box совпадает со всем подряд,
     // поэтому добавляем правило только если в списке что-то есть.
-    // «Сайты напрямую» — исключения (банки, госуслуги), поэтому они стоят первыми.
+    // «Сайты напрямую» - исключения (банки, госуслуги), поэтому они стоят первыми.
     // Приложений «напрямую» здесь нет: их VpnService вообще не пускает в туннель.
     let mut dns_rules = vec![];
     if !direct_domains.is_empty() {
@@ -91,12 +91,12 @@ pub fn build(mode: Mode, rules: &Rules, servers: &[(String, Value)], selected_ta
         "auto_route": true,
         "strict_route": true,
         // По умолчанию стек mixed отдаёт TCP ядру Android через слушатель на адресе
-        // туннеля — на Samsung (One UI) пакеты до него не доходят и TCP молча висит.
+        // туннеля - на Samsung (One UI) пакеты до него не доходят и TCP молча висит.
         // gvisor принимает TCP целиком внутри sing-box.
         "stack": "gvisor"
     });
     // Пакеты отсюда Kotlin передаёт в addDisallowedApplication: такие приложения
-    // ходят в сеть мимо VPN и не видят его — банки перестают ругаться.
+    // ходят в сеть мимо VPN и не видят его - банки перестают ругаться.
     if !direct_apps.is_empty() {
         tun["exclude_package"] = json!(direct_apps);
     }
@@ -181,7 +181,7 @@ mod tests {
         assert!(c["inbounds"][0].get("exclude_package").is_none());
         assert_eq!(c["route"]["final"], "proxy");
         assert_eq!(c["dns"]["final"], "dns-remote");
-        // Пустые списки не должны давать правил — иначе они совпадут со всем.
+        // Пустые списки не должны давать правил - иначе они совпадут со всем.
         assert_eq!(c["route"]["rules"].as_array().unwrap().len(), 3);
         assert!(c["dns"]["rules"].as_array().unwrap().is_empty());
         assert_eq!(c["experimental"]["clash_api"]["external_controller"], "127.0.0.1:9097");

@@ -51,7 +51,7 @@ import io.nekohasekai.libbox.NetworkInterface as BoxNetworkInterface
 
 /**
  * VPN-сервис: держит ядро sing-box (libbox) и TUN-интерфейс.
- * Ядро само решает, какие адреса и маршруты нужны, и просит интерфейс через openTun —
+ * Ядро само решает, какие адреса и маршруты нужны, и просит интерфейс через openTun -
  * сервис строит его системным VpnService.Builder и возвращает дескриптор.
  * Устроено по образцу sing-box-for-android, без Tailscale, root и прочего лишнего.
  */
@@ -79,7 +79,7 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     /**
      * Сохранить конфиг, не запуская ядро. Rust присылает свежий конфиг после каждого
-     * изменения настроек — по нему подключаются плитка, автозапуск и Always-on.
+     * изменения настроек - по нему подключаются плитка, автозапуск и Always-on.
      */
     fun saveConfig(context: Context, config: String) {
       // Путь к журналу знает только Android-сторона, поэтому дописываем его в конфиг здесь.
@@ -111,7 +111,7 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     /**
-     * Подключиться по последнему сохранённому конфигу. false — конфига ещё нет.
+     * Подключиться по последнему сохранённому конфигу. false - конфига ещё нет.
      * Можно звать из любого процесса: конфиг разбирает уже сама служба в «:vpn».
      */
     fun startSaved(context: Context): Boolean {
@@ -130,7 +130,7 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
       return true
     }
 
-    /** Разобрать сохранённый конфиг и перейти в «подключаемся» — уже внутри службы. */
+    /** Разобрать сохранённый конфиг и перейти в «подключаемся» - уже внутри службы. */
     private fun prepareSaved(context: Context): Boolean {
       val file = configFile(context)
       if (!file.exists()) return false
@@ -173,12 +173,12 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
       if (running) stopVpn(null) else stopSelf()
       return START_NOT_STICKY
     }
-    // Запуск из приложения, плитки, автозапуска (ACTION_START) или Always-on — тогда
+    // Запуск из приложения, плитки, автозапуска (ACTION_START) или Always-on - тогда
     // система сама шлёт SERVICE_INTERFACE. Повторный запуск во время работы игнорируем.
     if (intent?.action != ACTION_START && intent?.action != SERVICE_INTERFACE) return START_NOT_STICKY
     if (running) return START_NOT_STICKY
     if (!prepareSaved(this)) {
-      VpnState.set(VpnState.State.STOPPED, "Нет сохранённого конфига — откройте приложение и подключитесь")
+      VpnState.set(VpnState.State.STOPPED, "Нет сохранённого конфига - откройте приложение и подключитесь")
       stopSelf()
       return START_NOT_STICKY
     }
@@ -277,7 +277,7 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
       .setShowWhen(false)
       .build()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-      // systemExempted положен только VPN; без TUN ядро — обычный локальный прокси.
+      // systemExempted положен только VPN; без TUN ядро - обычный локальный прокси.
       val type = if (proxyPort > 0) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
         else ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
       startForeground(NOTIFICATION_ID, notification, type)
@@ -394,7 +394,7 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
   }
 
-  /** Чьё соединение — понадобится для правил по приложениям. */
+  /** Чьё соединение - понадобится для правил по приложениям. */
   override fun findConnectionOwner(
     ipProtocol: Int,
     sourceAddress: String,

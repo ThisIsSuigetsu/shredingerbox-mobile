@@ -19,7 +19,7 @@ class BootReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
     if (!context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(AUTOSTART, false)) return
-    // Без выданного разрешения VPN не поднять — пользователь подключится сам.
+    // Без выданного разрешения VPN не поднять - пользователь подключится сам.
     if (BoxVpnService.needsPermission(context)) return
     VpnState.app = context.applicationContext
     runCatching { BoxVpnService.startSaved(context) }

@@ -83,7 +83,7 @@ class NetworkMonitor(private val connectivity: ConnectivityManager) {
       listener.updateDefaultInterface("", -1, false, false)
       return
     }
-    // Свойства сети появляются не сразу после onAvailable — подождём до секунды.
+    // Свойства сети появляются не сразу после onAvailable - подождём до секунды.
     repeat(10) {
       val name = connectivity.getLinkProperties(network)?.interfaceName
       val index = name?.let { runCatching { NetworkInterface.getByName(it).index }.getOrNull() }

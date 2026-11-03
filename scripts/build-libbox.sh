@@ -2,8 +2,8 @@
 # Собирает ядро sing-box как Android-библиотеку libbox.aar через gomobile.
 # Работает в Git Bash на Windows и в Linux (GitHub Actions).
 #
-#   scripts/build-libbox.sh            — все архитектуры (arm64, arm, x86_64, x86)
-#   ARCHS=arm64 scripts/build-libbox.sh — только arm64, быстрее для отладки на телефоне
+#   scripts/build-libbox.sh            - все архитектуры (arm64, arm, x86_64, x86)
+#   ARCHS=arm64 scripts/build-libbox.sh - только arm64, быстрее для отладки на телефоне
 #
 # Нужны: Go, ANDROID_HOME и NDK_HOME (или ANDROID_NDK_HOME), JDK в JAVA_HOME.
 set -euo pipefail
@@ -26,7 +26,7 @@ fi
 
 cd "$src"
 
-# gomobile — форк SagerNet, версия из go.mod sing-box.
+# gomobile - форк SagerNet, версия из go.mod sing-box.
 gomobile_version="$(go list -m -f '{{.Version}}' github.com/sagernet/gomobile)"
 go install "github.com/sagernet/gomobile/cmd/gomobile@$gomobile_version"
 go install "github.com/sagernet/gomobile/cmd/gobind@$gomobile_version"
@@ -36,7 +36,7 @@ export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-${NDK_HOME:?задайте NDK_HOME
 
 # Только то, что умеет клиент: vless (Reality, utls), hy2 (quic), trojan, ss,
 # TUN через gvisor и Clash API для счётчика трафика. Без Tailscale, NaiveProxy,
-# OpenVPN и прочего — библиотека выходит в разы меньше.
+# OpenVPN и прочего - библиотека выходит в разы меньше.
 tags="with_gvisor,with_quic,with_utls,with_clash_api,badlinkname,tfogo_checklinkname0"
 ldflags="-X github.com/sagernet/sing-box/constant.Version=${SING_BOX_VERSION#v} -X runtime.godebugDefault=multipathtcp=0,tlssha1=1 -checklinkname=0 -s -w -buildid="
 

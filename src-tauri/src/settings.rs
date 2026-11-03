@@ -11,7 +11,7 @@ pub struct Server {
     pub id: String,
     pub name: String,
     pub link: String,
-    /// URL подписки, из которой пришёл сервер (None — добавлен вручную).
+    /// URL подписки, из которой пришёл сервер (None - добавлен вручную).
     #[serde(default)]
     pub subscription: Option<String>,
 }
@@ -22,7 +22,7 @@ pub struct Subscription {
     pub name: String,
 }
 
-/// TUN — VPN для всего телефона по правилам. Прокси — без VPN: ядро слушает
+/// TUN - VPN для всего телефона по правилам. Прокси - без VPN: ядро слушает
 /// 127.0.0.1, и через него ходят только приложения, где этот прокси прописан.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -32,7 +32,7 @@ pub enum Mode {
     Proxy,
 }
 
-/// Порт локального прокси в режиме «Прокси» — как на десктопе.
+/// Порт локального прокси в режиме «Прокси» - как на десктопе.
 pub const PROXY_PORT: u16 = 2080;
 
 /// Куда идёт трафик, который не попал ни в одно правило.
@@ -48,7 +48,7 @@ pub enum FinalRoute {
 pub struct AppRule {
     /// Название, как в списке приложений («Telegram»).
     pub name: String,
-    /// Имя пакета Android («org.telegram.messenger») — по нему и работает правило.
+    /// Имя пакета Android («org.telegram.messenger») - по нему и работает правило.
     pub package: String,
 }
 
@@ -58,10 +58,10 @@ pub struct AppRule {
 pub struct Rules {
     pub final_route: FinalRoute,
     pub proxy_apps: Vec<AppRule>,
-    /// Эти приложения вообще не попадают в VPN и не видят его — удобно для банков.
+    /// Эти приложения вообще не попадают в VPN и не видят его - удобно для банков.
     pub direct_apps: Vec<AppRule>,
     pub proxy_domains: Vec<String>,
-    /// Сайты, которые всегда идут напрямую, — даже из приложений «через VPN» и наборов.
+    /// Сайты, которые всегда идут напрямую, - даже из приложений «через VPN» и наборов.
     pub direct_domains: Vec<String>,
     /// Включённые готовые наборы (id из presets.rs).
     pub presets: Vec<String>,
@@ -113,7 +113,7 @@ impl Settings {
         std::fs::write(path, json).map_err(|e| e.to_string())
     }
 
-    /// Выбранный сервер, а если выбор потерялся — первый из списка.
+    /// Выбранный сервер, а если выбор потерялся - первый из списка.
     pub fn selected_server(&self) -> Option<&Server> {
         self.selected
             .as_ref()
@@ -121,7 +121,7 @@ impl Settings {
             .or_else(|| self.servers.first())
     }
 
-    /// Если выбранного сервера больше нет — выбираем первый.
+    /// Если выбранного сервера больше нет - выбираем первый.
     fn fix_selected(&mut self) {
         let exists = self.selected.as_ref().is_some_and(|id| self.servers.iter().any(|s| &s.id == id));
         if !exists {
@@ -142,7 +142,7 @@ impl Settings {
             match links::parse(line) {
                 Ok(p) => {
                     let id = new_id();
-                    // Только что добавленный ключ сразу выбран — так его ждёт пользователь.
+                    // Только что добавленный ключ сразу выбран - так его ждёт пользователь.
                     self.selected = Some(id.clone());
                     self.servers.push(Server { id, name: p.name, link: line.to_string(), subscription: None });
                     added += 1;
@@ -167,7 +167,7 @@ impl Settings {
     }
 
     /// Заменить серверы одной подписки свежим списком.
-    /// Сервер с тем же ключом сохраняет id — на нём будет держаться счётчик трафика за месяц.
+    /// Сервер с тем же ключом сохраняет id - на нём будет держаться счётчик трафика за месяц.
     pub fn merge_subscription(&mut self, url: &str, links_list: Vec<String>) {
         let old_selected_link = self.selected_server().map(|srv| srv.link.clone());
         let mut old_ids: HashMap<String, String> = self

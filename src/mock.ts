@@ -7,7 +7,7 @@ const settings = {
   servers: [
     { id: "a1", name: "🇳🇱 Нидерланды", link: "", subscription: SUB },
     { id: "a2", name: "🇩🇪 Германия", link: "", subscription: SUB },
-    { id: "a3", name: "🇫🇮 Финляндия — очень длинное название сервера", link: "", subscription: SUB },
+    { id: "a3", name: "🇫🇮 Финляндия - очень длинное название сервера", link: "", subscription: SUB },
     { id: "k1", name: "Мой hysteria2", link: "", subscription: null as string | null },
   ],
   subscriptions: [{ url: SUB, name: "Friends VPN" }],
