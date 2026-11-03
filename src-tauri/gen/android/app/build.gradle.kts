@@ -88,6 +88,8 @@ dependencies {
     implementation(files("libs/libbox.aar"))
     // Сканер QR-кодов из Google Play services: свой экран камеры, без разрешения на камеру.
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    // ModuleInstall: проверить, скачан ли модуль сканера, и попросить Google Play его скачать.
+    implementation("com.google.android.gms:play-services-base:18.5.0")
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.activity:activity-ktx:1.10.1")

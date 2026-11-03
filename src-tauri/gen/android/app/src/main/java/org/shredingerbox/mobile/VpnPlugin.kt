@@ -11,7 +11,11 @@ import android.provider.Settings
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import android.util.Log
+import com.google.android.gms.common.moduleinstall.ModuleInstall
+import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
 import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanner
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import android.graphics.Bitmap
@@ -132,14 +136,49 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
     invoke.resolve(JSObject().put("supported", true))
   }
 
-  /** Отсканировать QR-код с ключом или подпиской. null - пользователь закрыл сканер. */
+  /**
+   * Отсканировать QR-код с ключом или подпиской. null - пользователь закрыл сканер.
+   * Сам сканер Google Play докачивает отдельным модулем при первом использовании. Пока модуля
+   * нет, startScan падает с непонятной ошибкой, поэтому сначала проверяем, скачан ли он.
+   */
   @Command
   fun scanQr(invoke: Invoke) {
-    val options = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
-    GmsBarcodeScanning.getClient(activity, options).startScan()
-      .addOnSuccessListener { invoke.resolve(JSObject().put("text", it.rawValue)) }
-      .addOnCanceledListener { invoke.resolve(JSObject().put("text", null as String?)) }
-      .addOnFailureListener { invoke.reject("Сканер QR-кодов недоступен: ${it.message}") }
+    try {
+      val options = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+      val scanner = GmsBarcodeScanning.getClient(activity, options)
+      val modules = ModuleInstall.getClient(activity)
+      modules.areModulesAvailable(scanner)
+        .addOnSuccessListener { status ->
+          if (status.areModulesAvailable()) {
+            startScan(scanner, invoke)
+          } else {
+            modules.installModules(ModuleInstallRequest.newBuilder().addApi(scanner).build())
+            invoke.reject(
+              "Сканер QR-кодов ещё скачивается через Google Play. Подождите минуту и попробуйте снова. " +
+                "Если не скачивается, включите VPN и повторите.",
+            )
+          }
+        }
+        .addOnFailureListener { scannerUnavailable(invoke, it) }
+    } catch (e: Throwable) {
+      scannerUnavailable(invoke, e)
+    }
+  }
+
+  private fun startScan(scanner: GmsBarcodeScanner, invoke: Invoke) {
+    try {
+      scanner.startScan()
+        .addOnSuccessListener { invoke.resolve(JSObject().put("text", it.rawValue)) }
+        .addOnCanceledListener { invoke.resolve(JSObject().put("text", null as String?)) }
+        .addOnFailureListener { scannerUnavailable(invoke, it) }
+    } catch (e: Throwable) {
+      scannerUnavailable(invoke, e)
+    }
+  }
+
+  private fun scannerUnavailable(invoke: Invoke, e: Throwable) {
+    Log.e("ShredingerBox", "сканер QR-кодов", e)
+    invoke.reject("Сканер QR-кодов недоступен - нужны сервисы Google Play. Ключ можно вставить вручную.")
   }
   /** Разрешение на VPN: системное окно появляется, только если его ещё не давали. */
   @Command

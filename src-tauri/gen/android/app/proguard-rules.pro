@@ -22,3 +22,9 @@
 # Ядро sing-box (libbox): Go вызывает методы наших классов (PlatformInterface и др.)
 # через JNI по именам. Классы самого libbox сохраняет proguard.txt внутри .aar.
 -keep class * implements io.nekohasekai.libbox.** { *; }
+
+# Сканер QR-кодов (ML Kit): ищет свои компоненты по классам, а R8 сливает и переименовывает
+# их - getClient падает с NullPointerException в релизной сборке. Не трогаем ML Kit целиком.
+-keep class com.google.mlkit.** { *; }
+-keep class com.google.android.gms.internal.mlkit_** { *; }
+-keep class com.google.firebase.components.** { *; }
