@@ -5,7 +5,7 @@
 //! Правила те же, что на десктопе; приложения матчатся по имени пакета.
 
 use crate::presets;
-use crate::settings::{FinalRoute, Rules};
+use crate::settings::{FinalRoute, Mode, Rules, PROXY_PORT};
 use serde_json::{json, Value};
 
 /// Clash API ядра на 127.0.0.1: через него приложение переключает сервер
@@ -34,13 +34,20 @@ fn dedup(mut v: Vec<String>) -> Vec<String> {
 
 /// `servers` — разобранные серверы как (тег, outbound), `selected_tag` — текущий.
 /// Над ними строится селектор `proxy`, как на десктопе.
-pub fn build(rules: &Rules, servers: &[(String, Value)], selected_tag: &str, api: &Api) -> Value {
+pub fn build(mode: Mode, rules: &Rules, servers: &[(String, Value)], selected_tag: &str, api: &Api) -> Value {
     let mut domains = rules.proxy_domains.clone();
     domains.extend(presets::domains_for(&rules.presets));
     let domains = dedup(domains);
     let direct_domains = dedup(rules.direct_domains.clone());
-    let proxy_apps: Vec<&str> = rules.proxy_apps.iter().map(|a| a.package.as_str()).collect();
-    let direct_apps: Vec<&str> = rules.direct_apps.iter().map(|a| a.package.as_str()).collect();
+    // Без VPN Android не говорит, какое приложение открыло соединение, —
+    // правила по приложениям работают только в TUN.
+    let (proxy_apps, direct_apps): (Vec<&str>, Vec<&str>) = match mode {
+        Mode::Tun => (
+            rules.proxy_apps.iter().map(|a| a.package.as_str()).collect(),
+            rules.direct_apps.iter().map(|a| a.package.as_str()).collect(),
+        ),
+        Mode::Proxy => (vec![], vec![]),
+    };
 
     let (final_out, final_dns) = match rules.final_route {
         FinalRoute::Proxy => ("proxy", "dns-remote"),
@@ -93,6 +100,15 @@ pub fn build(rules: &Rules, servers: &[(String, Value)], selected_tag: &str, api
     if !direct_apps.is_empty() {
         tun["exclude_package"] = json!(direct_apps);
     }
+    let inbound = match mode {
+        Mode::Tun => tun,
+        Mode::Proxy => json!({
+            "type": "mixed",
+            "tag": "mixed-in",
+            "listen": "127.0.0.1",
+            "listen_port": PROXY_PORT
+        }),
+    };
 
     let mut outbounds: Vec<Value> = vec![json!({
         "type": "selector",
@@ -122,7 +138,7 @@ pub fn build(rules: &Rules, servers: &[(String, Value)], selected_tag: &str, api
             "final": final_dns,
             "strategy": "prefer_ipv4"
         },
-        "inbounds": [tun],
+        "inbounds": [inbound],
         "outbounds": outbounds,
         "route": {
             "rules": route_rules,
@@ -155,7 +171,7 @@ mod tests {
     #[test]
     fn selector_tun_and_api() {
         let rules = Rules { final_route: FinalRoute::Proxy, presets: vec![], ..Rules::default() };
-        let c = build(&rules, &one(), "srv-a", &api());
+        let c = build(Mode::Tun, &rules, &one(), "srv-a", &api());
         assert_eq!(c["outbounds"][0]["type"], "selector");
         assert_eq!(c["outbounds"][0]["default"], "srv-a");
         assert_eq!(c["outbounds"][1]["tag"], "srv-a");
@@ -181,7 +197,7 @@ mod tests {
             direct_domains: vec!["госуслуги.рф".into()],
             presets: vec!["discord".into()],
         };
-        let c = build(&rules, &one(), "srv-a", &api());
+        let c = build(Mode::Tun, &rules, &one(), "srv-a", &api());
         assert_eq!(c["route"]["final"], "direct");
         assert_eq!(c["dns"]["final"], "dns-local");
         assert_eq!(c["inbounds"][0]["exclude_package"], json!(["ru.bank"]));
@@ -193,5 +209,22 @@ mod tests {
         assert!(proxied.contains(&json!("example.com")));
         assert!(proxied.contains(&json!("discord.gg")));
         assert_eq!(r[5]["outbound"], "proxy");
+    }
+
+    #[test]
+    fn proxy_mode_has_no_tun_and_no_app_rules() {
+        let rules = Rules {
+            proxy_apps: vec![AppRule { name: "Telegram".into(), package: "org.telegram.messenger".into() }],
+            direct_apps: vec![AppRule { name: "Банк".into(), package: "ru.bank".into() }],
+            ..Rules::default()
+        };
+        let c = build(Mode::Proxy, &rules, &one(), "srv-a", &api());
+        let inbounds = c["inbounds"].as_array().unwrap();
+        assert_eq!(inbounds.len(), 1);
+        assert_eq!(inbounds[0]["type"], "mixed");
+        assert_eq!(inbounds[0]["listen"], "127.0.0.1");
+        assert_eq!(inbounds[0]["listen_port"], PROXY_PORT);
+        let text = c.to_string();
+        assert!(!text.contains("package_name") && !text.contains("exclude_package"));
     }
 }

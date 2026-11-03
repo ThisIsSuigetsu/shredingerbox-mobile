@@ -7,8 +7,10 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.util.Base64
+import androidx.core.content.FileProvider
 import app.tauri.plugin.JSArray
 import java.io.ByteArrayOutputStream
+import java.io.File
 import android.net.VpnService
 import androidx.activity.result.ActivityResult
 import app.tauri.annotation.ActivityCallback
@@ -22,6 +24,11 @@ import app.tauri.plugin.Plugin
 @InvokeArg
 class StartArgs {
   lateinit var config: String
+}
+
+@InvokeArg
+class InstallArgs {
+  lateinit var path: String
 }
 
 /** Команды VPN для Rust-части (src-tauri/src/vpn.rs). */
@@ -108,6 +115,25 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.reject("Не удалось получить список приложений: ${e.message}")
       }
     }.start()
+  }
+
+  /**
+   * Открыть системный установщик для скачанного обновления. Если установка из
+   * этого приложения ещё не разрешена, Android сам предложит её разрешить.
+   */
+  @Command
+  fun install(invoke: Invoke) {
+    val args = invoke.parseArgs(InstallArgs::class.java)
+    try {
+      val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", File(args.path))
+      val intent = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(uri, "application/vnd.android.package-archive")
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+      activity.startActivity(intent)
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject("Не удалось открыть установщик: ${e.message}")
+    }
   }
 
   /** Иконка 64×64 в виде data:-ссылки для <img>. */

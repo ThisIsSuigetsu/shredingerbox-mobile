@@ -12,6 +12,7 @@ const settings = {
   ],
   subscriptions: [{ url: SUB, name: "Friends VPN" }],
   selected: "a1" as string | null,
+  mode: "tun",
   rules: {
     final_route: "direct",
     proxy_apps: [{ name: "Telegram", package: "org.telegram.messenger" }],
@@ -69,6 +70,13 @@ mockIPC((cmd, args) => {
     case "set_rules":
       settings.rules = a.rules;
       return copy();
+    case "set_mode":
+      settings.mode = a.mode;
+      return copy();
+    case "check_update":
+      return { version: "0.2.0", current: "0.1.0", notes: "- Режим «Прокси»\n- Обновление из приложения", url: "", size: 31457280 };
+    case "install_update":
+      return new Promise((done) => later(() => done(null), 1500));
     case "get_presets":
       return PRESETS;
     case "list_apps":

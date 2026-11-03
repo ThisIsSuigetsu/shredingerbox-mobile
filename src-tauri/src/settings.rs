@@ -22,6 +22,19 @@ pub struct Subscription {
     pub name: String,
 }
 
+/// TUN — VPN для всего телефона по правилам. Прокси — без VPN: ядро слушает
+/// 127.0.0.1, и через него ходят только приложения, где этот прокси прописан.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    #[default]
+    Tun,
+    Proxy,
+}
+
+/// Порт локального прокси в режиме «Прокси» — как на десктопе.
+pub const PROXY_PORT: u16 = 2080;
+
 /// Куда идёт трафик, который не попал ни в одно правило.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -73,6 +86,7 @@ pub struct Settings {
     pub servers: Vec<Server>,
     pub subscriptions: Vec<Subscription>,
     pub selected: Option<String>,
+    pub mode: Mode,
     pub rules: Rules,
 }
 

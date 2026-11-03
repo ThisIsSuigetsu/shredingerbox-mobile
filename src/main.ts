@@ -4,7 +4,8 @@ import { mascot, Mood } from "./mascot";
 declare const __APP_VERSION__: string;
 
 type State = "stopped" | "starting" | "started" | "stopping";
-type View = "home" | "servers" | "rules" | "log";
+type View = "home" | "servers" | "rules" | "settings";
+type Mode = "tun" | "proxy";
 type FinalRoute = "proxy" | "direct";
 type AppList = "proxy_apps" | "direct_apps";
 type SiteList = "proxy_domains" | "direct_domains";
@@ -39,7 +40,15 @@ interface Settings {
   servers: Server[];
   subscriptions: Subscription[];
   selected: string | null;
+  mode: Mode;
   rules: Rules;
+}
+interface UpdateInfo {
+  version: string;
+  current: string;
+  notes: string | null;
+  url: string;
+  size: number;
 }
 interface Ping {
   id: string;
@@ -61,7 +70,11 @@ type Modal =
   | { kind: "add-server"; text: string; busy: boolean }
   | { kind: "clipboard"; text: string; busy: boolean }
   | { kind: "add-app"; list: AppList; filter: string; picked: Set<string> }
-  | { kind: "add-sites"; list: SiteList; text: string };
+  | { kind: "add-sites"; list: SiteList; text: string }
+  | { kind: "update"; info: UpdateInfo; busy: boolean };
+
+/** Порт локального прокси — settings.rs::PROXY_PORT. */
+const PROXY = "127.0.0.1:2080";
 
 const st = {
   view: "home" as View,
@@ -69,6 +82,7 @@ const st = {
     servers: [],
     subscriptions: [],
     selected: null,
+    mode: "tun",
     rules: { final_route: "direct", proxy_apps: [], direct_apps: [], proxy_domains: [], direct_domains: [], presets: [] },
   } as Settings,
   state: "stopped" as State,
@@ -82,6 +96,9 @@ const st = {
   modal: null as Modal | null,
   siteTab: "proxy_domains" as SiteList,
   log: "",
+  /** null — ещё не проверяли, false — обновлений нет. */
+  update: null as UpdateInfo | false | null,
+  checkingUpdate: false,
 };
 
 const LIST_TITLE: Record<AppList | SiteList, string> = {
@@ -102,7 +119,7 @@ const icon = {
   power: (s = 20) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v9"/><path d="M17.66 6.34a8 8 0 1 1-11.32 0"/></svg>`,
   rules: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M4 12h16M4 18h7"/><circle cx="17" cy="6" r="2"/><circle cx="14" cy="18" r="2"/></svg>`,
   globe: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg>`,
-  log: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h7M9 8h3"/></svg>`,
+  gear: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>`,
   plus: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>`,
   x: (s = 14) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
   refresh: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16M20 20v-4h-4"/></svg>`,
@@ -258,6 +275,9 @@ function homeView(): string {
   const servers = s.servers.length
     ? s.servers.map((x) => serverRow(x, false)).join("")
     : `<div class="empty">Серверов пока нет. Вставьте ключ <span class="mono">vless://</span>, <span class="mono">hy2://</span> или ссылку на подписку — их присылает тот, кто дал вам VPN.</div>`;
+  const modeOpt = (m: Mode, t: string, d: string) =>
+    `<button class="mode-opt ${s.mode === m ? "on" : ""}" data-action="set-mode" data-mode="${m}" aria-pressed="${s.mode === m}">
+      <span class="radio"></span><span><b>${t}</b><span>${esc(d)}</span></span></button>`;
   return `<header class="brand">${mascot(40, mood())}<span>ShredingerBox</span></header>
     <section class="home-center">
       <button class="power ${working ? "busy" : on ? "on" : ""}" data-action="toggle" aria-label="${st.state === "stopped" ? "Подключиться" : "Отключиться"}"
@@ -266,6 +286,14 @@ function homeView(): string {
       </button>
       <div class="status-title">${title}</div>
       <div class="status-sub">${sub}</div>
+    </section>
+    <section class="card">
+      <h2>Режим</h2>
+      ${modeOpt("tun", "TUN", "VPN для всего телефона — по правилам")}
+      ${modeOpt("proxy", "Прокси", `Без VPN: только приложения, где указан прокси ${PROXY}`)}
+      ${s.mode === "proxy"
+        ? `<div class="hint">${icon.info}<span>Укажите SOCKS5 или HTTP-прокси <b class="mono">${PROXY}</b> в настройках приложения (например, Telegram → Данные и память → Прокси) или в настройках Wi-Fi. Остальные приложения идут напрямую.</span></div>`
+        : ""}
     </section>
     <section class="card">
       <div class="card-head"><h2>Серверы</h2>${s.servers.length ? `<button class="link-btn" data-action="ping" ${st.pinging ? "disabled" : ""}>${st.pinging ? "Меряем…" : "Проверить пинг"}</button>` : ""}</div>
@@ -350,6 +378,9 @@ function rulesView(): string {
       <h1>Правила</h1>
       <p>Что идёт через VPN, а что напрямую</p>
     </div>
+    ${st.settings.mode === "proxy"
+      ? `<div class="hint warn">${icon.info}<span>Сейчас режим «Прокси»: правила для приложений не действуют — без VPN Android не говорит, какое приложение открыло соединение. Правила для сайтов работают.</span></div>`
+      : ""}
     <section class="card">
       <h2>Остальной трафик</h2>
       <div class="seg" role="group" aria-label="Остальной трафик">
@@ -375,17 +406,39 @@ function rulesView(): string {
     </section>`;
 }
 
-function logView(): string {
-  return `<div class="page-head">
-      <h1>Журнал</h1>
-      <p>Записи ядра sing-box — пригодятся, если что-то не работает.</p>
-      <div class="row">
-        <button class="btn-ghost" data-action="log-refresh">Обновить</button>
-        <button class="btn-light" data-action="log-copy">Скопировать</button>
+function mb(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+}
+
+function settingsView(): string {
+  const u = st.update;
+  const updateLine = st.checkingUpdate
+    ? "Проверяем…"
+    : u
+      ? `Доступна версия ${esc(u.version)}`
+      : u === false
+        ? "Установлена последняя версия"
+        : "Новые версии выходят на GitHub";
+  return `<div class="page-head"><h1>Настройки</h1></div>
+    <section class="card">
+      <div class="card-head">
+        <div class="sub-title"><h2>ShredingerBox v${esc(__APP_VERSION__)}</h2><span class="muted">${updateLine}</span></div>
+        ${u
+          ? `<button class="btn-accent small" data-action="open-update">Обновить</button>`
+          : `<button class="btn-ghost" data-action="check-update" ${st.checkingUpdate ? "disabled" : ""}>Проверить</button>`}
       </div>
-    </div>
-    <pre class="code" id="log-text">${esc(st.log || "Журнал пуст — подключитесь, и здесь появятся записи ядра.")}</pre>
-    <span class="version">ShredingerBox v${esc(__APP_VERSION__)}</span>`;
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <h2>Журнал ядра</h2>
+        <div class="row">
+          <button class="x-btn" data-action="log-refresh" aria-label="Обновить журнал">${icon.refresh}</button>
+          <button class="link-btn" data-action="log-copy">Скопировать</button>
+        </div>
+      </div>
+      <p class="card-hint">Записи sing-box — пригодятся, если что-то не работает.</p>
+      <pre class="code" id="log-text">${esc(st.log || "Журнал пуст — подключитесь, и здесь появятся записи ядра.")}</pre>
+    </section>`;
 }
 
 // ---------- окна ----------
@@ -426,6 +479,16 @@ function modalView(): string {
       <div class="modal-body"><p class="lead">В буфере обмена ${esc(clipSummary(m.text))}.</p></div>
       <div class="modal-foot"><button class="btn-ghost" data-action="dismiss-clipboard">Не сейчас</button><span class="grow"></span>
         <button class="btn-accent" data-action="accept-clipboard" ${m.busy ? "disabled" : ""}>${m.busy ? "Добавляем…" : "Добавить"}</button></div>`;
+  } else if (m.kind === "update") {
+    const i = m.info;
+    body = `${head(`Доступна версия ${esc(i.version)}`)}
+      <div class="modal-body">
+        <div class="row">${mascot(56, "wink")}<p class="lead">Сейчас установлена ${esc(i.current)}.${i.size ? ` Скачается ${mb(i.size)}.` : ""}
+          После загрузки Android попросит подтвердить установку.</p></div>
+        ${i.notes ? `<pre class="code notes">${esc(i.notes)}</pre>` : ""}
+      </div>
+      <div class="modal-foot"><button class="btn-ghost" data-action="snooze-update" ${m.busy ? "disabled" : ""}>Позже</button><span class="grow"></span>
+        <button class="btn-accent" data-action="install-update" ${m.busy ? "disabled" : ""}>${m.busy ? "Скачиваем…" : "Обновить"}</button></div>`;
   } else if (m.kind === "add-app") {
     body = `${head(LIST_TITLE[m.list])}
       <div class="modal-body">
@@ -450,7 +513,7 @@ function modalView(): string {
 // ---------- отрисовка ----------
 
 function render() {
-  const page = { home: homeView, servers: serversView, rules: rulesView, log: logView }[st.view]();
+  const page = { home: homeView, servers: serversView, rules: rulesView, settings: settingsView }[st.view]();
   const tab = (v: View, label: string, ic: string) =>
     `<button class="tab ${st.view === v ? "on" : ""}" data-action="nav" data-view="${v}" aria-current="${st.view === v ? "page" : "false"}">${ic}<span>${label}</span></button>`;
   // Опрос статуса и пинг перерисовывают всё — поле ввода в окне не должно терять фокус.
@@ -462,7 +525,7 @@ function render() {
       ${tab("home", "Главная", icon.power(22))}
       ${tab("servers", "Серверы", icon.globe)}
       ${tab("rules", "Правила", icon.rules)}
-      ${tab("log", "Журнал", icon.log)}
+      ${tab("settings", "Настройки", icon.gear)}
     </nav>
     ${modalView()}`;
   document.body.classList.toggle("locked", !!st.modal);
@@ -577,12 +640,13 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       window.scrollTo(0, 0);
       render();
       if (st.view === "rules") loadApps();
-      if (st.view === "log") loadLog();
+      if (st.view === "settings") loadLog();
       return;
     case "toggle":
       return act(async () => {
         if (st.state === "stopped") {
-          if (!(await invoke<boolean>("vpn_prepare"))) throw "Без разрешения на VPN подключиться нельзя";
+          // В режиме «Прокси» VPN не поднимается — разрешение не нужно.
+          if (st.settings.mode === "tun" && !(await invoke<boolean>("vpn_prepare"))) throw "Без разрешения на VPN подключиться нельзя";
           await invoke("vpn_connect");
           st.state = "starting";
         } else {
@@ -727,6 +791,44 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       st.modal = null;
       return saveRules((r) => (r[m.list] = [...r[m.list], ...add]));
     }
+    case "set-mode": {
+      const mode = el.dataset.mode as Mode;
+      if (mode === s.mode) return;
+      if (mode === "tun" && st.state !== "stopped" && !(await invoke<boolean>("vpn_prepare"))) {
+        return toast("Без разрешения на VPN режим TUN не включить", true);
+      }
+      s.mode = mode;
+      return act(async () => {
+        try {
+          st.settings = await invoke<Settings>("set_mode", { mode });
+        } catch (e) {
+          st.settings = await invoke<Settings>("get_settings");
+          throw e;
+        }
+      });
+    }
+    case "check-update":
+      return checkUpdate(true);
+    case "open-update":
+      if (st.update) st.modal = { kind: "update", info: st.update, busy: false };
+      return render();
+    case "snooze-update":
+      if (st.modal?.kind === "update") updateSnoozed = st.modal.info.version;
+      st.modal = null;
+      return render();
+    case "install-update": {
+      const m = st.modal as Extract<Modal, { kind: "update" }>;
+      m.busy = true;
+      render();
+      try {
+        await invoke("install_update", { url: m.info.url });
+        st.modal = null;
+      } catch (e) {
+        m.busy = false;
+        toast(errText(e), true);
+      }
+      return render();
+    }
     case "log-refresh":
       return loadLog();
     case "log-copy":
@@ -770,6 +872,30 @@ root.addEventListener("change", (ev) => {
   btn.disabled = !m.picked.size;
   btn.textContent = m.picked.size ? `Добавить (${m.picked.size})` : "Добавить";
 });
+
+// ---------- обновления ----------
+
+/** Версия, от которой отказались «Позже», — до перезапуска больше не предлагаем. */
+let updateSnoozed = "";
+
+async function checkUpdate(manual = false) {
+  if (st.checkingUpdate) return;
+  st.checkingUpdate = true;
+  render();
+  try {
+    const info = await invoke<UpdateInfo | null>("check_update");
+    st.update = info ?? false;
+    if (info && (manual || info.version !== updateSnoozed) && !st.modal) {
+      st.modal = { kind: "update", info, busy: false };
+    }
+  } catch (e) {
+    // Молча при запуске: нет сети — не повод для ошибки.
+    if (manual) toast(errText(e), true);
+  } finally {
+    st.checkingUpdate = false;
+    render();
+  }
+}
 
 // ---------- буфер обмена ----------
 
@@ -833,4 +959,6 @@ async function migrateOldKey() {
   pingAll();
   // Сразу после запуска окно может ещё не получить фокус — буфер вернёт пусто.
   setTimeout(checkClipboard, 700);
+  // Буфер обмена важнее: обновление предложим, только если окно ещё свободно.
+  setTimeout(checkUpdate, 2500);
 })();

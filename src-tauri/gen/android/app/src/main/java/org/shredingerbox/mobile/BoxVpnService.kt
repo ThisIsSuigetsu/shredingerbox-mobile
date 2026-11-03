@@ -70,10 +70,20 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     /** Журнал ядра: перезаписывается при каждом подключении, показывается на экране «Журнал». */
     fun logFile(context: Context) = File(context.filesDir, "box.log")
 
+    /**
+     * Порт локального прокси, если ядро запущено в режиме «Прокси» (без TUN), иначе 0.
+     * В этом режиме VPN не поднимается: ядро просто слушает 127.0.0.1.
+     */
+    @Volatile private var proxyPort = 0
+
     fun start(context: Context, config: String) {
       if (VpnState.state != VpnState.State.STOPPED) return
       // Путь к журналу знает только Android-сторона, поэтому дописываем его в конфиг здесь.
       val json = JSONObject(config)
+      val inbounds = json.optJSONArray("inbounds")
+      val list = (0 until (inbounds?.length() ?: 0)).map { inbounds!!.getJSONObject(it) }
+      proxyPort = if (list.any { it.optString("type") == "tun" }) 0
+        else list.firstOrNull { it.optString("type") == "mixed" }?.optInt("listen_port") ?: 0
       val log = json.optJSONObject("log") ?: JSONObject().also { json.put("log", it) }
       log.put("output", logFile(context).path)
       logFile(context).delete()
@@ -132,7 +142,7 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
       this.server = server
       server.startOrReloadService(configFile(this).readText(), OverrideOptions())
       VpnState.set(VpnState.State.STARTED)
-      showNotification("Подключено")
+      showNotification(if (proxyPort > 0) "Прокси работает на 127.0.0.1:$proxyPort" else "Подключено")
     } catch (e: Exception) {
       Log.e(TAG, "не удалось запустить ядро", e)
       appendLog("ERROR не удалось запустить ядро: $e")
@@ -202,7 +212,10 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
       .setShowWhen(false)
       .build()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-      startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED)
+      // systemExempted положен только VPN; без TUN ядро — обычный локальный прокси.
+      val type = if (proxyPort > 0) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        else ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
+      startForeground(NOTIFICATION_ID, notification, type)
     } else {
       startForeground(NOTIFICATION_ID, notification)
     }

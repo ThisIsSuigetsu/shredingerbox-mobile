@@ -5,11 +5,12 @@ mod links;
 mod presets;
 mod settings;
 mod subscription;
+mod update;
 mod vpn;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use settings::{Rules, Settings};
+use settings::{Mode, Rules, Settings};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -62,7 +63,7 @@ fn build_config(s: &Settings, api: &config::Api) -> Result<Value, String> {
     if !servers.iter().any(|(tag, _)| *tag == server_tag(&selected.id)) {
         return Err(format!("Не удалось разобрать ключ сервера «{}»", selected.name));
     }
-    Ok(config::build(&s.rules, &servers, &server_tag(&selected.id), api))
+    Ok(config::build(s.mode, &s.rules, &servers, &server_tag(&selected.id), api))
 }
 
 fn api_client() -> Option<reqwest::Client> {
@@ -292,6 +293,34 @@ async fn list_apps(app: AppHandle) -> Result<Value, String> {
     Ok(r.apps)
 }
 
+/// TUN или Прокси. Если ядро запущено — переподключаемся в новом режиме.
+#[tauri::command]
+async fn set_mode(app: AppHandle, state: State<'_, AppState>, mode: Mode) -> Result<Settings, String> {
+    let mut s = state.snapshot();
+    s.mode = mode;
+    state.store(s.clone())?;
+    if status(&app).await?.state != "stopped" {
+        restart(&app, &state, &s).await?;
+    }
+    Ok(s)
+}
+
+// ---------- обновления ----------
+
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<update::UpdateInfo>, String> {
+    update::check(&app.package_info().version.to_string()).await
+}
+
+/// Скачать APK и открыть установщик. Приложение перезапустится уже новой версией.
+#[tauri::command]
+async fn install_update(app: AppHandle, url: String) -> Result<(), String> {
+    let path = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("update.apk");
+    update::download(&url, &path).await?;
+    let _: Value = vpn::call(&app, "install", json!({ "path": path.to_string_lossy() })).await?;
+    Ok(())
+}
+
 // ---------- VPN ----------
 
 #[derive(Deserialize)]
@@ -387,6 +416,9 @@ pub fn run() {
             get_presets,
             set_rules,
             list_apps,
+            set_mode,
+            check_update,
+            install_update,
             vpn_prepare,
             vpn_connect,
             vpn_disconnect,

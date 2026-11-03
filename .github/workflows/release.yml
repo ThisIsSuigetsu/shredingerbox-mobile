@@ -1,0 +1,83 @@
+# Выпуск ShredingerBox для Android: при отправке метки вида v0.2.0 собирает ядро,
+# подписанный APK для arm64 и публикует релиз. Установленное приложение увидит
+# релиз и предложит обновиться.
+#
+# Секреты репозитория (Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_BASE64   — файл ключа .jks в base64
+#   ANDROID_KEYSTORE_PASSWORD — пароль хранилища
+#   ANDROID_KEY_ALIAS         — имя ключа в хранилище
+#   ANDROID_KEY_PASSWORD      — пароль ключа
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Версия в метке совпадает с package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Метка $GITHUB_REF_NAME, а в package.json $version — поднимите версию в package.json, tauri.conf.json и Cargo.toml"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Ядро sing-box (libbox.aar)
+        run: NDK_HOME="$ANDROID_NDK_LATEST_HOME" ARCHS=arm64 bash scripts/build-libbox.sh
+
+      - name: Зависимости npm
+        run: npm ci
+
+      - name: Ключ подписи
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Сборка APK
+        run: NDK_HOME="$ANDROID_NDK_LATEST_HOME" npx tauri android build --apk --target aarch64 --ci
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Имя файла
+        run: |
+          mkdir -p out
+          cp src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk \
+            "out/ShredingerBox-${GITHUB_REF_NAME#v}-arm64.apk"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ShredingerBox ${{ github.ref_name }}
+          body: Обновление ShredingerBox для Android ${{ github.ref_name }}. Установленное приложение предложит обновиться само.
+          files: out/*.apk
