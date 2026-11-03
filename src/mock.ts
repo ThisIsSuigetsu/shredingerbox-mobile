@@ -12,30 +12,67 @@ const settings = {
   ],
   subscriptions: [{ url: SUB, name: "Friends VPN" }],
   selected: "a1" as string | null,
+  rules: {
+    final_route: "direct",
+    proxy_apps: [{ name: "Telegram", package: "org.telegram.messenger" }],
+    direct_apps: [{ name: "Т-Банк", package: "com.idamob.tinkoff.android" }],
+    proxy_domains: ["example.com"],
+    direct_domains: ["gosuslugi.ru"],
+    presets: ["youtube", "discord"],
+  } as unknown,
 };
 let state = "stopped";
 
+const PRESETS = [
+  { id: "youtube", title: "YouTube", domains: ["youtube.com"] },
+  { id: "discord", title: "Discord", domains: ["discord.com"] },
+  { id: "instagram", title: "Instagram", domains: ["instagram.com"] },
+  { id: "x", title: "X / Twitter", domains: ["x.com"] },
+  { id: "claude", title: "Claude", domains: ["claude.ai"] },
+  { id: "chatgpt", title: "ChatGPT", domains: ["chatgpt.com"] },
+  { id: "spotify", title: "Spotify", domains: ["spotify.com"] },
+];
+
+const APPS = [
+  ["Chrome", "com.android.chrome"],
+  ["Discord", "com.discord"],
+  ["Instagram", "com.instagram.android"],
+  ["Spotify", "com.spotify.music"],
+  ["Telegram", "org.telegram.messenger"],
+  ["Госуслуги", "ru.rostel"],
+  ["Т-Банк", "com.idamob.tinkoff.android"],
+  ["YouTube", "com.google.android.youtube"],
+].map(([name, pkg]) => ({ name, package: pkg, icon: null }));
+
 const later = (fn: () => void, ms: number) => setTimeout(fn, ms);
+const copy = () => structuredClone(settings);
 
 mockIPC((cmd, args) => {
-  const a = (args ?? {}) as Record<string, string>;
+  const a = (args ?? {}) as Record<string, any>;
   switch (cmd) {
     case "get_settings":
     case "refresh_subscriptions":
-      return settings;
+      return copy();
     case "add_from_text":
       settings.servers.push({ id: `k${Date.now()}`, name: a.text.slice(0, 30), link: a.text, subscription: null });
-      return settings;
+      return copy();
     case "remove_server":
       settings.servers = settings.servers.filter((s) => s.id !== a.id);
-      return settings;
+      return copy();
     case "remove_subscription":
       settings.servers = settings.servers.filter((s) => s.subscription !== a.url);
       settings.subscriptions = settings.subscriptions.filter((s) => s.url !== a.url);
-      return settings;
+      return copy();
     case "select_server":
       settings.selected = a.id;
-      return settings;
+      return copy();
+    case "set_rules":
+      settings.rules = a.rules;
+      return copy();
+    case "get_presets":
+      return PRESETS;
+    case "list_apps":
+      return new Promise((done) => later(() => done(APPS), 400));
     case "vpn_prepare":
       return true;
     case "vpn_connect":

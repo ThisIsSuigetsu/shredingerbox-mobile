@@ -2,6 +2,13 @@ package org.shredingerbox.mobile
 
 import android.app.Activity
 import android.content.ClipboardManager
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
+import android.util.Base64
+import app.tauri.plugin.JSArray
+import java.io.ByteArrayOutputStream
 import android.net.VpnService
 import androidx.activity.result.ActivityResult
 import app.tauri.annotation.ActivityCallback
@@ -73,6 +80,46 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
       invoke.resolve(JSObject().put("text", text))
     }
   }
+
+  /** Приложения с иконкой на рабочем столе — для правил «через VPN» и «напрямую». */
+  @Command
+  fun apps(invoke: Invoke) {
+    Thread {
+      try {
+        val pm = activity.packageManager
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val list = pm.queryIntentActivities(launcher, 0)
+          .map { it.activityInfo.applicationInfo }
+          .distinctBy { it.packageName }
+          .filter { it.packageName != activity.packageName }
+          .map { info -> Triple(info.loadLabel(pm).toString(), info.packageName, info) }
+          .sortedBy { it.first.lowercase() }
+        val apps = JSArray()
+        for ((name, pkg, info) in list) {
+          apps.put(
+            JSObject()
+              .put("name", name)
+              .put("package", pkg)
+              .put("icon", iconData(info.loadIcon(pm))),
+          )
+        }
+        invoke.resolve(JSObject().put("apps", apps))
+      } catch (e: Exception) {
+        invoke.reject("Не удалось получить список приложений: ${e.message}")
+      }
+    }.start()
+  }
+
+  /** Иконка 64×64 в виде data:-ссылки для <img>. */
+  private fun iconData(drawable: Drawable): String? = runCatching {
+    val size = 64
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    drawable.setBounds(0, 0, size, size)
+    drawable.draw(Canvas(bitmap))
+    val out = ByteArrayOutputStream()
+    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+    "data:image/png;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+  }.getOrNull()
 
   @Command
   fun status(invoke: Invoke) {

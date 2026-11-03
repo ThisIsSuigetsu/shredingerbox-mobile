@@ -2,13 +2,14 @@ mod config;
 // Копия links.rs десктопа без изменений — часть функций здесь не нужна.
 #[allow(dead_code)]
 mod links;
+mod presets;
 mod settings;
 mod subscription;
 mod vpn;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use settings::Settings;
+use settings::{Rules, Settings};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -61,7 +62,7 @@ fn build_config(s: &Settings, api: &config::Api) -> Result<Value, String> {
     if !servers.iter().any(|(tag, _)| *tag == server_tag(&selected.id)) {
         return Err(format!("Не удалось разобрать ключ сервера «{}»", selected.name));
     }
-    Ok(config::build(&servers, &server_tag(&selected.id), api))
+    Ok(config::build(&s.rules, &servers, &server_tag(&selected.id), api))
 }
 
 fn api_client() -> Option<reqwest::Client> {
@@ -260,6 +261,37 @@ async fn clipboard_candidate(app: AppHandle, state: State<'_, AppState>) -> Resu
     Ok((!known).then_some(candidate))
 }
 
+// ---------- правила ----------
+
+#[tauri::command]
+fn get_presets() -> Vec<presets::Preset> {
+    presets::PRESETS.to_vec()
+}
+
+/// Сохранить правила. Если VPN включён — переподключаемся: правила живут в конфиге ядра.
+#[tauri::command]
+async fn set_rules(app: AppHandle, state: State<'_, AppState>, rules: Rules) -> Result<Settings, String> {
+    let mut s = state.snapshot();
+    s.rules = rules;
+    state.store(s.clone())?;
+    if status(&app).await?.state != "stopped" {
+        restart(&app, &state, &s).await?;
+    }
+    Ok(s)
+}
+
+#[derive(Deserialize)]
+struct Apps {
+    apps: Value,
+}
+
+/// Установленные приложения с иконками: [{ name, package, icon }].
+#[tauri::command]
+async fn list_apps(app: AppHandle) -> Result<Value, String> {
+    let r: Apps = vpn::call(&app, "apps", ()).await?;
+    Ok(r.apps)
+}
+
 // ---------- VPN ----------
 
 #[derive(Deserialize)]
@@ -352,6 +384,9 @@ pub fn run() {
             select_server,
             ping_servers,
             clipboard_candidate,
+            get_presets,
+            set_rules,
+            list_apps,
             vpn_prepare,
             vpn_connect,
             vpn_disconnect,

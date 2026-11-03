@@ -22,12 +22,58 @@ pub struct Subscription {
     pub name: String,
 }
 
+/// Куда идёт трафик, который не попал ни в одно правило.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum FinalRoute {
+    Proxy,
+    #[default]
+    Direct,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct AppRule {
+    /// Название, как в списке приложений («Telegram»).
+    pub name: String,
+    /// Имя пакета Android («org.telegram.messenger») — по нему и работает правило.
+    pub package: String,
+}
+
+/// Правила как на десктопе, только приложения задаются пакетами, а не exe.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Rules {
+    pub final_route: FinalRoute,
+    pub proxy_apps: Vec<AppRule>,
+    /// Эти приложения вообще не попадают в VPN и не видят его — удобно для банков.
+    pub direct_apps: Vec<AppRule>,
+    pub proxy_domains: Vec<String>,
+    /// Сайты, которые всегда идут напрямую, — даже из приложений «через VPN» и наборов.
+    pub direct_domains: Vec<String>,
+    /// Включённые готовые наборы (id из presets.rs).
+    pub presets: Vec<String>,
+}
+
+impl Default for Rules {
+    fn default() -> Self {
+        Self {
+            final_route: FinalRoute::Direct,
+            proxy_apps: vec![],
+            direct_apps: vec![],
+            proxy_domains: vec![],
+            direct_domains: vec![],
+            presets: vec!["youtube".into(), "discord".into()],
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
 #[serde(default)]
 pub struct Settings {
     pub servers: Vec<Server>,
     pub subscriptions: Vec<Subscription>,
     pub selected: Option<String>,
+    pub rules: Rules,
 }
 
 pub fn new_id() -> String {
