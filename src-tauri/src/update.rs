@@ -35,9 +35,21 @@ fn parse_version(s: &str) -> Option<(u64, u64, u64)> {
 }
 
 /// Описание релиза без инструкции для первой установки (её пишет release.yml):
-/// тому, кто обновляется, она не нужна.
+/// тому, кто обновляется, она не нужна. Строки пунктов в CHANGELOG.md перенесены
+/// по ширине — склеиваем их, чтобы в окне обновления текст переносился сам.
 fn notes(body: &str) -> String {
-    body.split("**Первая установка**").next().unwrap_or_default().trim().to_string()
+    let changes = body.split("**Первая установка**").next().unwrap_or_default();
+    let mut out: Vec<String> = vec![];
+    for line in changes.trim().lines() {
+        match out.last_mut() {
+            Some(prev) if line.starts_with("  ") && !prev.is_empty() => {
+                prev.push(' ');
+                prev.push_str(line.trim());
+            }
+            _ => out.push(line.trim_end().to_string()),
+        }
+    }
+    out.join("\n")
 }
 
 /// Последний релиз на GitHub, если он новее `current` и в нём есть APK.
@@ -110,5 +122,9 @@ mod tests {
     fn notes_without_install_guide() {
         assert_eq!(notes("Что нового.\n\n**Первая установка**\n1. Скачайте"), "Что нового.");
         assert_eq!(notes("  Только текст  "), "Только текст");
+        assert_eq!(
+            notes("- Первый пункт,\n  его продолжение.\n- Второй.\n\nАбзац"),
+            "- Первый пункт, его продолжение.\n- Второй.\n\nАбзац"
+        );
     }
 }
