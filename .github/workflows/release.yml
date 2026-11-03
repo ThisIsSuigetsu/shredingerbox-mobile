@@ -8,6 +8,8 @@
 #   ANDROID_KEY_ALIAS         — имя ключа в хранилище
 #   ANDROID_KEY_PASSWORD      — пароль ключа
 name: Release
+# Без этого в списке Actions сборка называется по сообщению последнего коммита.
+run-name: ShredingerBox ${{ github.ref_name }}
 
 on:
   push:
