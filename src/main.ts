@@ -341,6 +341,8 @@ async function migrateOldKey() {
 }
 
 (async () => {
+  // В обычном браузере (npm run dev) Tauri нет — подставляем демо-данные.
+  if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) await import("./mock");
   try {
     settings = await invoke<Settings>("get_settings");
     await migrateOldKey();
