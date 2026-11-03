@@ -39,6 +39,14 @@ app.innerHTML = `<main class="screen">
     placeholder="Вставьте ключ vless://, hy2://, trojan:// или ss://"></textarea>
   <button class="connect" id="connect">Подключить</button>
   <p class="error" id="error" hidden></p>
+  <button class="link" id="log-toggle">Журнал</button>
+  <section class="log" id="log" hidden>
+    <div class="log-bar">
+      <button class="link" id="log-refresh">Обновить</button>
+      <button class="link" id="log-copy">Скопировать</button>
+    </div>
+    <pre id="log-text"></pre>
+  </section>
   <span class="version">v${__APP_VERSION__}</span>
 </main>`;
 
@@ -113,6 +121,35 @@ button.addEventListener("click", async () => {
     busy = false;
     render();
   }
+});
+
+// ---------- журнал ядра ----------
+
+const logBox = $("log");
+const logText = $("log-text");
+
+async function loadLog() {
+  try {
+    logText.textContent = (await invoke<string>("vpn_log")) || "Журнал пуст — подключитесь, и здесь появятся записи ядра.";
+    logText.scrollTop = logText.scrollHeight;
+  } catch (e) {
+    logText.textContent = String(e);
+  }
+}
+
+$("log-toggle").addEventListener("click", () => {
+  logBox.hidden = !logBox.hidden;
+  if (!logBox.hidden) loadLog();
+});
+$("log-refresh").addEventListener("click", loadLog);$("log-copy").addEventListener("click", async () => {
+  const button = $("log-copy");
+  try {
+    await navigator.clipboard.writeText(logText.textContent ?? "");
+    button.textContent = "Скопировано";
+  } catch {
+    button.textContent = "Не удалось";
+  }
+  setTimeout(() => (button.textContent = "Скопировать"), 1500);
 });
 
 render();

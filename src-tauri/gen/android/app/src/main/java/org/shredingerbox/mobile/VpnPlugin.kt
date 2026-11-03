@@ -48,6 +48,14 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
     invoke.resolve()
   }
 
+  /** Последние строки журнала ядра. */
+  @Command
+  fun log(invoke: Invoke) {
+    val file = BoxVpnService.logFile(activity)
+    val text = if (file.exists()) file.readLines().takeLast(300).joinToString("\n") else ""
+    invoke.resolve(JSObject().put("text", text))
+  }
+
   @Command
   fun status(invoke: Invoke) {
     invoke.resolve(

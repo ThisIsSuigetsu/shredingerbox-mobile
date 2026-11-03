@@ -58,3 +58,14 @@ button { font: inherit; color: inherit; cursor: pointer; border: none; backgroun
 .connect:disabled { opacity: 0.6; }
 
 .error { color: var(--danger); margin: 0; max-width: 420px; overflow-wrap: anywhere; }
+
+.link { color: var(--blue); padding: 8px 4px; font-size: 14px; }
+
+.log { width: 100%; max-width: 420px; text-align: left; }
+.log-bar { display: flex; justify-content: flex-end; gap: 12px; }
+.log pre {
+  margin: 0; max-height: 50vh; overflow: auto; padding: 10px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  font: 11px/1.45 ui-monospace, "Roboto Mono", monospace; color: var(--soft);
+  white-space: pre-wrap; overflow-wrap: anywhere; user-select: text;
+}

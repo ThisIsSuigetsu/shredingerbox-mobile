@@ -6,8 +6,7 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Правила по приложениям: видеть установленные пакеты -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />    <!-- Правила по приложениям: видеть установленные пакеты -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <!-- AndroidTV support -->

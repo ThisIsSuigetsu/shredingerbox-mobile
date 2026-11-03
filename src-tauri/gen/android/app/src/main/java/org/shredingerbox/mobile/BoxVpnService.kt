@@ -40,6 +40,7 @@ import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
+import org.json.JSONObject
 import java.io.File
 import java.net.Inet6Address
 import java.net.InetSocketAddress
@@ -66,9 +67,17 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     fun configFile(context: Context) = File(context.filesDir, "config.json")
 
+    /** Журнал ядра: перезаписывается при каждом подключении, показывается на экране «Журнал». */
+    fun logFile(context: Context) = File(context.filesDir, "box.log")
+
     fun start(context: Context, config: String) {
       if (VpnState.state != VpnState.State.STOPPED) return
-      configFile(context).writeText(config)
+      // Путь к журналу знает только Android-сторона, поэтому дописываем его в конфиг здесь.
+      val json = JSONObject(config)
+      val log = json.optJSONObject("log") ?: JSONObject().also { json.put("log", it) }
+      log.put("output", logFile(context).path)
+      logFile(context).delete()
+      configFile(context).writeText(json.toString())
       // Сразу «подключаемся»: интерфейс не должен успеть увидеть старое «выключено» с прошлой ошибкой.
       VpnState.set(VpnState.State.STARTING)
       try {
@@ -126,6 +135,7 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
       showNotification("Подключено")
     } catch (e: Exception) {
       Log.e(TAG, "не удалось запустить ядро", e)
+      appendLog("ERROR не удалось запустить ядро: $e")
       shutdown(e.message ?: e.toString())
     }
   }
@@ -380,6 +390,11 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
   override fun createBridge(options: BridgeOptions?): BridgeSession = error("не поддерживается")
 
   // ---------- помощники ----------
+
+  /** Ошибки Android-стороны пишем в тот же журнал, что и ядро. */
+  private fun appendLog(line: String) {
+    runCatching { logFile(this).appendText("$line\n") }
+  }
 
   private class StringArray(list: List<String>) : StringIterator {
     private val it = list.iterator()

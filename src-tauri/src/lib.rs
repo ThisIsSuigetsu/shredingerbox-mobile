@@ -42,6 +42,18 @@ async fn vpn_disconnect(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Deserialize)]
+struct Log {
+    text: String,
+}
+
+/// Последние строки журнала ядра.
+#[tauri::command]
+async fn vpn_log(app: AppHandle) -> Result<String, String> {
+    let log: Log = vpn::call(&app, "log", ()).await?;
+    Ok(log.text)
+}
+
 #[derive(Serialize, Deserialize)]
 struct Status {
     /// stopped | starting | started | stopping
@@ -64,7 +76,8 @@ pub fn run() {
             vpn_prepare,
             vpn_connect,
             vpn_disconnect,
-            vpn_status
+            vpn_status,
+            vpn_log
         ])
         .run(tauri::generate_context!())
         .expect("не удалось запустить ShredingerBox");

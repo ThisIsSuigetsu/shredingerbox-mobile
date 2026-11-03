@@ -25,7 +25,9 @@ pub fn build(servers: &[(String, Value)], selected_tag: &str) -> Value {
     outbounds.push(json!({ "type": "direct", "tag": "direct" }));
 
     json!({
-        "log": { "level": "warn", "timestamp": true },
+        // info: в журнале видно каждое соединение. Когда появится продвинутый режим,
+        // уровень станет настройкой, как на десктопе.
+        "log": { "level": "info", "timestamp": true },
         "dns": {
             "servers": [
                 { "type": "https", "tag": "dns-remote", "server": "1.1.1.1", "detour": "proxy" },
@@ -40,7 +42,11 @@ pub fn build(servers: &[(String, Value)], selected_tag: &str) -> Value {
             "tag": "tun-in",
             "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
             "auto_route": true,
-            "strict_route": true
+            "strict_route": true,
+            // По умолчанию стек mixed отдаёт TCP ядру Android через слушатель на адресе
+            // туннеля — на Samsung (One UI) пакеты до него не доходят и TCP молча висит.
+            // gvisor принимает TCP целиком внутри sing-box.
+            "stack": "gvisor"
         }],
         "outbounds": outbounds,
         "route": {
@@ -69,6 +75,7 @@ mod tests {
         assert_eq!(c["outbounds"][1]["tag"], "srv-a");
         assert_eq!(c["outbounds"][2]["tag"], "direct");
         assert_eq!(c["inbounds"][0]["type"], "tun");
+        assert_eq!(c["inbounds"][0]["stack"], "gvisor");
         assert_eq!(c["route"]["final"], "proxy");
     }
 }
