@@ -275,9 +275,8 @@ function homeView(): string {
   const servers = s.servers.length
     ? s.servers.map((x) => serverRow(x, false)).join("")
     : `<div class="empty">Серверов пока нет. Вставьте ключ <span class="mono">vless://</span>, <span class="mono">hy2://</span> или ссылку на подписку — их присылает тот, кто дал вам VPN.</div>`;
-  const modeOpt = (m: Mode, t: string, d: string) =>
-    `<button class="mode-opt ${s.mode === m ? "on" : ""}" data-action="set-mode" data-mode="${m}" aria-pressed="${s.mode === m}">
-      <span class="radio"></span><span><b>${t}</b><span>${esc(d)}</span></span></button>`;
+  const modeOpt = (m: Mode, t: string) =>
+    `<button class="${s.mode === m ? "on" : ""}" data-action="set-mode" data-mode="${m}" aria-pressed="${s.mode === m}">${t}</button>`;
   return `<header class="brand">${mascot(40, mood())}<span>ShredingerBox</span></header>
     <section class="home-center">
       <button class="power ${working ? "busy" : on ? "on" : ""}" data-action="toggle" aria-label="${st.state === "stopped" ? "Подключиться" : "Отключиться"}"
@@ -289,11 +288,10 @@ function homeView(): string {
     </section>
     <section class="card">
       <h2>Режим</h2>
-      ${modeOpt("tun", "TUN", "VPN для всего телефона — по правилам")}
-      ${modeOpt("proxy", "Прокси", `Без VPN: только приложения, где указан прокси ${PROXY}`)}
-      ${s.mode === "proxy"
-        ? `<div class="hint">${icon.info}<span>Укажите SOCKS5 или HTTP-прокси <b class="mono">${PROXY}</b> в настройках приложения (например, Telegram → Данные и память → Прокси) или в настройках Wi-Fi. Остальные приложения идут напрямую.</span></div>`
-        : ""}
+      <div class="seg" role="group" aria-label="Режим">${modeOpt("tun", "TUN")}${modeOpt("proxy", "Прокси")}</div>
+      ${s.mode === "tun"
+        ? `<p class="card-hint">VPN для всего телефона — по правилам.</p>`
+        : `<div class="hint">${icon.info}<span>Без VPN: через прокси <b class="mono">${PROXY}</b> ходят только приложения, где он указан, — например, Telegram → Данные и память → Прокси (SOCKS5 или HTTP), или настройки Wi-Fi. Остальные идут напрямую.</span></div>`}
     </section>
     <section class="card">
       <div class="card-head"><h2>Серверы</h2>${s.servers.length ? `<button class="link-btn" data-action="ping" ${st.pinging ? "disabled" : ""}>${st.pinging ? "Меряем…" : "Проверить пинг"}</button>` : ""}</div>

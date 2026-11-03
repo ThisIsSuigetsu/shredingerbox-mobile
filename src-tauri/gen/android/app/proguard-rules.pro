@@ -19,3 +19,6 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# Ядро sing-box (libbox): Go вызывает методы наших классов (PlatformInterface и др.)
+# через JNI по именам. Классы самого libbox сохраняет proguard.txt внутри .aar.
+-keep class * implements io.nekohasekai.libbox.** { *; }
