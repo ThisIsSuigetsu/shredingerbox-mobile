@@ -61,6 +61,15 @@ interface Preset {
   title: string;
   domains: string[];
 }
+interface Usage {
+  up: number;
+  down: number;
+}
+interface MonthTraffic {
+  month: string;
+  servers: Record<string, Usage>;
+  speed: Usage;
+}
 interface AppInfo {
   name: string;
   package: string;
@@ -99,6 +108,8 @@ const st = {
   /** null — ещё не проверяли, false — обновлений нет. */
   update: null as UpdateInfo | false | null,
   checkingUpdate: false,
+  /** Расход по серверам за текущий месяц и скорость. */
+  usage: { month: "", servers: {}, speed: { up: 0, down: 0 } } as MonthTraffic,
 };
 
 const LIST_TITLE: Record<AppList | SiteList, string> = {
@@ -136,6 +147,65 @@ function splitFlag(name: string): { code: string; name: string } {
   }
   const letters = name.replace(/[^\p{L}]/gu, "");
   return { code: (letters.slice(0, 2) || "??").toUpperCase(), name };
+}
+
+const num = (x: number) => x.toLocaleString("ru-RU", { maximumFractionDigits: 1 });
+
+function bytes(n: number): string {
+  if (n >= 1024 ** 3) return `${num(n / 1024 ** 3)} ГБ`;
+  if (n >= 1024 ** 2) return `${num(n / 1024 ** 2)} МБ`;
+  return `${num(n / 1024)} КБ`;
+}
+
+function speed(n: number): string {
+  return n >= 1024 * 1024 ? `${num(n / 1024 / 1024)} МБ/с` : `${num(n / 1024)} КБ/с`;
+}
+
+const MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+/** «2026-11» → «ноябрь» */
+const monthName = (month: string) => MONTHS[Number(month.slice(5, 7)) - 1] ?? "этот месяц";
+
+/** Расход сервера за месяц, «1,2 ГБ». Пусто, если трафика не было. */
+function usageShort(id: string): string {
+  const u = st.usage.servers[id];
+  return u && u.up + u.down > 0 ? bytes(u.up + u.down) : "";
+}
+
+function usageView(id: string): string {
+  return `<span class="usage" data-usage-id="${esc(id)}">${esc(usageShort(id))}</span>`;
+}
+
+function speedsView(): string {
+  const s = st.usage.speed;
+  return `<div class="speeds" id="speeds">
+    <span class="speed down">↓ <span id="spd-down">${speed(s.down)}</span></span>
+    <span class="speed up">↑ <span id="spd-up">${speed(s.up)}</span></span>
+  </div>`;
+}
+
+/** Обновляем цифры на месте: перерисовка всего экрана раз в секунду ни к чему. */
+async function refreshUsage() {
+  try {
+    st.usage = await invoke<MonthTraffic>("get_traffic");
+  } catch {
+    return;
+  }
+  document.querySelectorAll<HTMLElement>("[data-usage-id]").forEach((el) => (el.textContent = usageShort(el.dataset.usageId!)));
+  const down = document.getElementById("spd-down");
+  const up = document.getElementById("spd-up");
+  if (down && up) {
+    down.textContent = speed(st.usage.speed.down);
+    up.textContent = speed(st.usage.speed.up);
+  }
+  const month = document.getElementById("usage-month");
+  if (month) month.textContent = monthText();
+}
+
+/** «1,2 ГБ за ноябрь» — расход текущего сервера. */
+function monthText(): string {
+  const srv = selectedServer();
+  const short = srv ? usageShort(srv.id) : "";
+  return short ? `${short} за ${monthName(st.usage.month)}` : "";
 }
 
 function pingView(id: string): string {
@@ -256,7 +326,7 @@ function serverRow(x: Server, removable: boolean): string {
   const on = x.id === selectedServer()?.id;
   return `<div class="server${on ? " on" : ""}">
     <button class="server-pick" data-action="select" data-id="${esc(x.id)}" aria-pressed="${on}">
-      <span class="flag">${esc(f.code)}</span><span class="name">${esc(f.name)}</span>${pingView(x.id)}
+      <span class="flag">${esc(f.code)}</span><span class="name">${esc(f.name)}</span>${usageView(x.id)}${pingView(x.id)}
     </button>
     ${removable ? deleteButton(`server:${x.id}`, `Удалить ${x.name}`) : ""}
   </div>`;
@@ -285,6 +355,8 @@ function homeView(): string {
       </button>
       <div class="status-title">${title}</div>
       <div class="status-sub">${sub}</div>
+      <div class="status-month" id="usage-month">${esc(monthText())}</div>
+      ${on ? speedsView() : ""}
     </section>
     <section class="card">
       <h2>Режим</h2>
@@ -333,7 +405,8 @@ function serversView(): string {
   const empty = !s.servers.length ? `<section class="card"><div class="empty">Серверов пока нет. Вставьте ключ или ссылку на подписку.</div></section>` : "";
   return `<div class="page-head">
       <h1>Серверы</h1>
-      <p>Пока VPN включён, пинг меряется через туннель, а переключение мгновенное.</p>
+      <p>Пока VPN включён, пинг меряется через туннель, а переключение мгновенное.
+        Рядом с сервером — расход трафика за ${esc(monthName(st.usage.month))}.</p>
       <div class="row">
         ${s.servers.length ? `<button class="btn-ghost" data-action="ping" ${st.pinging ? "disabled" : ""}>${st.pinging ? "Меряем…" : "Проверить пинг"}</button>` : ""}
         <button class="btn-light" data-action="open-add-server">Добавить</button>
@@ -579,6 +652,8 @@ async function poll() {
       // После подключения пинг меряется уже через VPN — реальная задержка.
       if (st.state === "started" || st.state === "stopped") setTimeout(pingAll, 1500);
     }
+    // Пока подключены, счётчик в Rust растёт каждую секунду.
+    if (st.state === "started") refreshUsage();
   } catch (e) {
     toast(errText(e), true);
   }
@@ -955,6 +1030,7 @@ async function migrateOldKey() {
   poll();
   setInterval(poll, 1000);
   pingAll();
+  refreshUsage();
   // Сразу после запуска окно может ещё не получить фокус — буфер вернёт пусто.
   setTimeout(checkClipboard, 700);
   // Буфер обмена важнее: обновление предложим, только если окно ещё свободно.

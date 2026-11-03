@@ -124,6 +124,19 @@ textarea.field { padding: 12px; resize: none; line-height: 1.5; font: 13px/1.5 u
 .status-sub { display: flex; align-items: center; justify-content: center; gap: 8px; max-width: 100%; font-size: 14px; color: var(--muted); }
 .status-sub .cur-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-sub .ping { margin-left: 0; padding-left: 0; }
+.status-month { font-size: 13px; color: var(--muted); min-height: 1em; margin-top: -4px; }
+.status-month:empty { display: none; }
+.speeds { display: flex; gap: 10px; margin-top: 4px; }
+.speed {
+  height: 34px; padding: 0 14px; border-radius: 17px; background: var(--card);
+  display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-variant-numeric: tabular-nums;
+}
+.speed.down { color: var(--accent); }
+.speed.up { color: var(--blue); }
+.speed span { color: var(--text); }
+.usage { font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; flex-shrink: 0; margin-left: auto; padding-left: 8px; }
+.usage:empty { display: none; }
+.usage + .ping { margin-left: 0; }
 .flag {
   height: 22px; min-width: 32px; padding: 0 6px; border-radius: 5px; background: var(--chip); flex-shrink: 0;
   font-size: 11px; font-weight: 700; color: var(--soft); display: inline-flex; align-items: center; justify-content: center;

@@ -77,6 +77,14 @@ mockIPC((cmd, args) => {
       return { version: "0.2.0", current: "0.1.0", notes: "- Режим «Прокси»\n- Обновление из приложения", url: "", size: 31457280 };
     case "install_update":
       return new Promise((done) => later(() => done(null), 1500));
+    case "get_traffic": {
+      const on = state === "started";
+      return {
+        month: "2026-11",
+        servers: { a1: { up: 120e6, down: 1.3e9 }, a2: { up: 2e6, down: 48e6 } },
+        speed: on ? { up: 24e3 + Math.random() * 1e4, down: 1.6e6 + Math.random() * 4e5 } : { up: 0, down: 0 },
+      };
+    }
     case "get_presets":
       return PRESETS;
     case "list_apps":

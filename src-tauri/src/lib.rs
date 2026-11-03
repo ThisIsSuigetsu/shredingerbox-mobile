@@ -5,6 +5,7 @@ mod links;
 mod presets;
 mod settings;
 mod subscription;
+mod traffic;
 mod update;
 mod vpn;
 
@@ -21,6 +22,7 @@ struct AppState {
     path: PathBuf,
     /// Clash API запущенного ядра; новый порт и пароль на каждое подключение.
     api: Mutex<Option<config::Api>>,
+    traffic: traffic::Traffic,
 }
 
 impl AppState {
@@ -339,7 +341,8 @@ async fn start(app: &AppHandle, state: &AppState, s: &Settings) -> Result<(), St
     let api = new_api()?;
     let config = build_config(s, &api)?;
     let _: Value = vpn::call(app, "start", json!({ "config": config.to_string() })).await?;
-    *state.api.lock().unwrap() = Some(api);
+    *state.api.lock().unwrap() = Some(api.clone());
+    traffic::spawn_counter(app.clone(), api);
     Ok(())
 }
 
@@ -383,6 +386,21 @@ async fn vpn_status(app: AppHandle) -> Result<Status, String> {
     status(&app).await
 }
 
+#[derive(Serialize)]
+struct MonthTraffic {
+    month: String,
+    servers: std::collections::HashMap<String, traffic::Usage>,
+    /// Скорость за последнюю секунду: байты вверх и вниз.
+    speed: traffic::Usage,
+}
+
+/// Расход трафика по серверам за текущий месяц и текущая скорость.
+#[tauri::command]
+fn get_traffic(state: State<AppState>) -> MonthTraffic {
+    let month = traffic::current_month();
+    MonthTraffic { servers: state.traffic.month(&month), month, speed: state.traffic.speed() }
+}
+
 #[derive(Deserialize)]
 struct Log {
     text: String,
@@ -400,8 +418,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(vpn::init())
         .setup(|app| {
-            let path = app.path().app_data_dir()?.join("settings.json");
-            app.manage(AppState { settings: Mutex::new(Settings::load(&path)), path, api: Mutex::new(None) });
+            let dir = app.path().app_data_dir()?;
+            let path = dir.join("settings.json");
+            app.manage(AppState {
+                settings: Mutex::new(Settings::load(&path)),
+                path,
+                api: Mutex::new(None),
+                traffic: traffic::Traffic::load(dir.join("traffic.json")),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -419,6 +443,7 @@ pub fn run() {
             set_mode,
             check_update,
             install_update,
+            get_traffic,
             vpn_prepare,
             vpn_connect,
             vpn_disconnect,
