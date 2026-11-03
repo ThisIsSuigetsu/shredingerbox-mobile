@@ -6,10 +6,17 @@
 
 use serde_json::{json, Value};
 
+/// Clash API ядра на 127.0.0.1: через него приложение переключает сервер
+/// без переподключения и меряет пинг через VPN.
+#[derive(Clone)]
+pub struct Api {
+    pub port: u16,
+    pub secret: String,
+}
+
 /// `servers` — разобранные серверы как (тег, outbound), `selected_tag` — текущий.
-/// Над ними строится селектор `proxy`, как на десктопе: так позже можно будет
-/// переключать сервер без переподключения.
-pub fn build(servers: &[(String, Value)], selected_tag: &str) -> Value {
+/// Над ними строится селектор `proxy`, как на десктопе.
+pub fn build(servers: &[(String, Value)], selected_tag: &str, api: &Api) -> Value {
     let mut outbounds: Vec<Value> = vec![json!({
         "type": "selector",
         "tag": "proxy",
@@ -58,6 +65,12 @@ pub fn build(servers: &[(String, Value)], selected_tag: &str) -> Value {
             "final": "proxy",
             "auto_detect_interface": true,
             "default_domain_resolver": "dns-local"
+        },
+        "experimental": {
+            "clash_api": {
+                "external_controller": format!("127.0.0.1:{}", api.port),
+                "secret": api.secret
+            }
         }
     })
 }
@@ -69,7 +82,8 @@ mod tests {
     #[test]
     fn selector_tun_and_final() {
         let servers = vec![("srv-a".to_string(), json!({ "type": "vless", "server": "a" }))];
-        let c = build(&servers, "srv-a");
+        let api = Api { port: 9097, secret: "s".into() };
+        let c = build(&servers, "srv-a", &api);
         assert_eq!(c["outbounds"][0]["type"], "selector");
         assert_eq!(c["outbounds"][0]["default"], "srv-a");
         assert_eq!(c["outbounds"][1]["tag"], "srv-a");
@@ -77,5 +91,6 @@ mod tests {
         assert_eq!(c["inbounds"][0]["type"], "tun");
         assert_eq!(c["inbounds"][0]["stack"], "gvisor");
         assert_eq!(c["route"]["final"], "proxy");
+        assert_eq!(c["experimental"]["clash_api"]["external_controller"], "127.0.0.1:9097");
     }
 }

@@ -23,6 +23,12 @@ interface Settings {
   subscriptions: Subscription[];
   selected: string | null;
 }
+interface Ping {
+  id: string;
+  ms: number | null;
+  udp: boolean;
+  via_vpn: boolean;
+}
 
 const app = document.getElementById("app")!;
 app.innerHTML = `<main class="screen">
@@ -34,9 +40,18 @@ app.innerHTML = `<main class="screen">
     <p class="error" id="error" hidden></p>
   </section>
 
+  <section class="clip" id="clip" hidden>
+    <p id="clip-text"></p>
+    <div class="add-actions">
+      <button class="link" id="clip-dismiss">Не сейчас</button>
+      <button class="primary" id="clip-add">Добавить</button>
+    </div>
+  </section>
+
   <section class="servers">
     <div class="section-head">
       <h2>Серверы</h2>
+      <button class="link" id="ping" hidden>Пинг</button>
       <button class="link" id="refresh" hidden>Обновить</button>
       <button class="link" id="add-toggle">Добавить</button>
     </div>
@@ -75,6 +90,7 @@ let settings: Settings = { servers: [], subscriptions: [], selected: null };
 let state: State = "stopped";
 // Пока ждём ответа на нажатие, опрос статуса не должен перерисовывать кнопку.
 let busy = false;
+let pings: Record<string, Ping> = {};
 
 const MOOD: Record<State, Mood> = { stopped: "sleep", starting: "wink", started: "peek", stopping: "wink" };
 const LABEL: Record<State, string> = {
@@ -118,6 +134,8 @@ async function poll() {
       state = s.state;
       if (state === "stopped" && s.error) showError(s.error);
       renderHero();
+      // После подключения пинг меряется уже через VPN — реальная задержка.
+      if (state === "started" || state === "stopped") setTimeout(pingAll, 1500);
     }
   } catch (e) {
     showError(e);
@@ -164,11 +182,43 @@ function deleteButton(key: string, title: string): string {
   }</button>`;
 }
 
+function pingView(id: string): string {
+  const p = pings[id];
+  if (!p) return "";
+  if (p.udp) return `<span class="ping muted">UDP</span>`;
+  if (p.ms == null) return `<span class="ping bad">нет ответа</span>`;
+  // Через VPN задержка складывается из двух плеч — порог выше.
+  const good = p.via_vpn ? 300 : 120;
+  const cls = p.ms <= good ? "good" : p.ms <= good * 2.5 ? "slow" : "bad";
+  return `<span class="ping ${cls}">${p.ms} мс</span>`;
+}
+
+let pinging = false;
+
+async function pingAll() {
+  if (pinging || !settings.servers.length) return;
+  pinging = true;
+  const btn = $<HTMLButtonElement>("ping");
+  btn.disabled = true;
+  btn.textContent = "Меряем…";
+  try {
+    const list = await invoke<Ping[]>("ping_servers");
+    pings = Object.fromEntries(list.map((p) => [p.id, p]));
+  } catch {
+    // Пинг — подсказка, а не действие: ошибку не показываем.
+  } finally {
+    pinging = false;
+    btn.disabled = false;
+    btn.textContent = "Пинг";
+    renderServers();
+  }
+}
+
 function serverRow(s: Server, removable: boolean): string {
   const selected = s.id === selectedServer()?.id;
   return `<div class="server${selected ? " selected" : ""}">
     <button class="server-pick" data-select="${esc(s.id)}">
-      <span class="dot"></span><span class="server-name">${esc(s.name)}</span>
+      <span class="dot"></span><span class="server-name">${esc(s.name)}</span>${pingView(s.id)}
     </button>
     ${removable ? deleteButton(`server:${s.id}`, `Удалить ${s.name}`) : ""}
   </div>`;
@@ -198,6 +248,7 @@ function renderServers() {
     ? groups.join("")
     : `<p class="empty">Добавьте ключ или ссылку на подписку — их присылает тот, кто дал вам VPN.</p>`;
   $("refresh").hidden = !settings.subscriptions.length;
+  $("ping").hidden = !settings.servers.length;
   if (!settings.servers.length) addBox.hidden = false;
 }
 
@@ -266,8 +317,10 @@ addSubmit.addEventListener("click", () =>
     addText.value = "";
     addBox.hidden = true;
     render();
+    pingAll();
   }),
 );
+$("ping").addEventListener("click", pingAll);
 $("refresh").addEventListener("click", () =>
   act(async () => {
     const refresh = $<HTMLButtonElement>("refresh");
@@ -281,9 +334,79 @@ $("refresh").addEventListener("click", () =>
     } finally {
       refresh.textContent = "Обновить";
       render();
+      pingAll();
     }
   }),
 );
+
+// ---------- буфер обмена ----------
+
+const clipBox = $("clip");
+let clipCandidate = "";
+/** Текст из буфера, который уже отклонили, — второй раз не предлагаем. */
+let clipDismissed = "";
+
+/** «ключ «Германия»», «3 ключа», «подписка с panel.example.org» — без самих секретов. */
+function clipSummary(text: string): string {
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      return `ссылка на подписку с ${new URL(text).host}`;
+    } catch {
+      return "ссылка на подписку";
+    }
+  }
+  const lines = text.split("\n").filter(Boolean);
+  if (lines.length > 1) return `ключи: ${lines.length}`;
+  const hash = lines[0].indexOf("#");
+  let name = "";
+  try {
+    name = hash >= 0 ? decodeURIComponent(lines[0].slice(hash + 1)) : "";
+  } catch {
+    // Кривое имя — покажем без него.
+  }
+  return name ? `ключ «${name}»` : `ключ ${lines[0].split("://")[0]}://…`;
+}
+
+async function checkClipboard() {
+  if (document.visibilityState !== "visible") return;
+  try {
+    const text = await invoke<string | null>("clipboard_candidate");
+    if (!text || text === clipDismissed || text === clipCandidate) return;
+    clipCandidate = text;
+    $("clip-text").textContent = `В буфере обмена ${clipSummary(text)}. Добавить?`;
+    clipBox.hidden = false;
+  } catch {
+    // Буфер недоступен — молча пропускаем.
+  }
+}
+
+function hideClip() {
+  clipCandidate = "";
+  clipBox.hidden = true;
+}
+
+$("clip-dismiss").addEventListener("click", () => {
+  clipDismissed = clipCandidate;
+  hideClip();
+});
+$("clip-add").addEventListener("click", () =>
+  act(async () => {
+    const text = clipCandidate;
+    hideClip();
+    try {
+      settings = await invoke<Settings>("add_from_text", { text });
+    } catch (e) {
+      clipDismissed = text;
+      throw e;
+    }
+    addBox.hidden = true;
+    render();
+    pingAll();
+  }),
+);
+// Буфер читается только когда окно в фокусе — проверяем при каждом возвращении в приложение.
+window.addEventListener("focus", checkClipboard);
+document.addEventListener("visibilitychange", checkClipboard);
 
 // ---------- журнал ядра ----------
 
@@ -352,4 +475,7 @@ async function migrateOldKey() {
   render();
   poll();
   setInterval(poll, 1000);
+  pingAll();
+  // Сразу после запуска окно может ещё не получить фокус — буфер вернёт пусто.
+  setTimeout(checkClipboard, 700);
 })();

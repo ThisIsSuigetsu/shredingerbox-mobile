@@ -85,6 +85,17 @@ button:disabled { opacity: 0.55; }
 .server.selected .dot { background: var(--accent); border-color: var(--accent); }
 .server.selected .server-name { color: var(--accent); font-weight: 600; }
 
+.ping { margin-left: auto; padding-left: 8px; font-size: 13px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.ping.good { color: var(--accent); }
+.ping.slow { color: var(--amber); }
+.ping.bad { color: var(--danger); }
+.ping.muted { color: var(--muted); }
+
+/* ---------- предложение из буфера обмена ---------- */
+
+.clip { background: var(--card); border: 1px solid var(--blue); border-radius: 14px; padding: 12px 14px; }
+.clip p { margin: 0 0 8px; line-height: 1.45; overflow-wrap: anywhere; }
+
 .delete { color: var(--muted); padding: 10px 12px; font-size: 14px; flex-shrink: 0; }
 .delete.armed { color: var(--danger); font-weight: 600; }
 

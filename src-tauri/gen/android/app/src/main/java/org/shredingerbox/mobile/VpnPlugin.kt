@@ -1,6 +1,7 @@
 package org.shredingerbox.mobile
 
 import android.app.Activity
+import android.content.ClipboardManager
 import android.net.VpnService
 import androidx.activity.result.ActivityResult
 import app.tauri.annotation.ActivityCallback
@@ -54,6 +55,23 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
     val file = BoxVpnService.logFile(activity)
     val text = if (file.exists()) file.readLines().takeLast(300).joinToString("\n") else ""
     invoke.resolve(JSObject().put("text", text))
+  }
+
+  /**
+   * Текст из буфера обмена — для предложения добавить ключ. С Android 10 буфер
+   * читается, только пока окно приложения в фокусе; иначе придёт null.
+   */
+  @Command
+  fun clipboard(invoke: Invoke) {
+    activity.runOnUiThread {
+      val text = try {
+        val cm = activity.getSystemService(ClipboardManager::class.java)
+        cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(activity)?.toString()
+      } catch (e: Exception) {
+        null
+      }
+      invoke.resolve(JSObject().put("text", text))
+    }
   }
 
   @Command

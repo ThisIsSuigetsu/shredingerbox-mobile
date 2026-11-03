@@ -48,6 +48,17 @@ mockIPC((cmd, args) => {
       return null;
     case "vpn_status":
       return { state, error: null };
+    case "ping_servers":
+      return settings.servers.map((s, i) => ({
+        id: s.id,
+        ms: s.subscription ? [48, 135, null][i % 3] : null,
+        udp: !s.subscription && state !== "started",
+        via_vpn: state === "started",
+      }));
+    case "clipboard_candidate": {
+      const clip = "vless://uuid@example.org:443?security=reality#%F0%9F%87%BA%F0%9F%87%B8%20США";
+      return settings.servers.some((s) => s.link === clip) ? null : clip;
+    }
     case "vpn_log":
       return "+0300 2026-11-03 12:00:00 INFO sing-box started (демо-журнал)";
   }
