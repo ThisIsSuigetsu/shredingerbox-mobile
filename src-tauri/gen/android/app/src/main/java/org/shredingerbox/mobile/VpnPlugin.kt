@@ -9,6 +9,8 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import android.provider.Settings
 import android.webkit.WebView
+import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AppCompatActivity
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
@@ -54,6 +56,21 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
   override fun load(webView: WebView) {
     VpnState.app = activity.applicationContext
     remember(activity.intent)
+    // «Назад» при включённом VPN сворачивает приложение, а не закрывает: так оно
+    // открывается мгновенно. С выключенным — закрывается как обычно. Добавлен позже
+    // обработчиков Tauri, поэтому срабатывает первым.
+    val dispatcher = (activity as AppCompatActivity).onBackPressedDispatcher
+    dispatcher.addCallback(activity, object : OnBackPressedCallback(true) {
+      override fun handleOnBackPressed() {
+        if (VpnState.read(activity).state != VpnState.State.STOPPED) {
+          activity.moveTaskToBack(true)
+        } else {
+          isEnabled = false
+          dispatcher.onBackPressed()
+          isEnabled = true
+        }
+      }
+    })
   }
 
   override fun onNewIntent(intent: Intent) = remember(intent)
@@ -239,11 +256,13 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
   @Command
   fun status(invoke: Invoke) {
+    // Служба живёт в другом процессе — состояние берём из её файла.
+    val snapshot = VpnState.read(activity)
     val result = JSObject()
-      .put("state", VpnState.state.name.lowercase())
-      .put("error", VpnState.error)
+      .put("state", snapshot.state.name.lowercase())
+      .put("error", snapshot.error)
     // Clash API ядра — Rust подхватывает его, если подключились без приложения.
-    BoxVpnService.api?.let { (port, secret) ->
+    snapshot.api?.let { (port, secret) ->
       result.put("api", JSObject().put("port", port).put("secret", secret))
     }
     invoke.resolve(result)

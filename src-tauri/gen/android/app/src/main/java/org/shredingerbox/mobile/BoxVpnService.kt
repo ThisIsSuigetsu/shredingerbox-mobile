@@ -59,6 +59,7 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
   companion object {
     private const val TAG = "ShredingerBox"
     private const val ACTION_STOP = "org.shredingerbox.mobile.STOP"
+    private const val ACTION_START = "org.shredingerbox.mobile.START"
     private const val CHANNEL = "vpn"
     private const val NOTIFICATION_ID = 1
 
@@ -77,13 +78,6 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     @Volatile private var proxyPort = 0
 
     /**
-     * Clash API запущенного ядра «порт» to «пароль». Rust узнаёт его отсюда, если ядро
-     * запустили без приложения — плиткой, при включении телефона или Always-on.
-     */
-    @Volatile var api: Pair<Int, String>? = null
-      private set
-
-    /**
      * Сохранить конфиг, не запуская ядро. Rust присылает свежий конфиг после каждого
      * изменения настроек — по нему подключаются плитка, автозапуск и Always-on.
      */
@@ -96,7 +90,6 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
 
     fun start(context: Context, config: String) {
-      if (VpnState.state != VpnState.State.STOPPED) return
       saveConfig(context, config)
       startSaved(context)
     }
@@ -117,12 +110,19 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
       return !proxy && VpnService.prepare(context) != null
     }
 
-    /** Подключиться по последнему сохранённому конфигу. false — конфига ещё нет. */
+    /**
+     * Подключиться по последнему сохранённому конфигу. false — конфига ещё нет.
+     * Можно звать из любого процесса: конфиг разбирает уже сама служба в «:vpn».
+     */
     fun startSaved(context: Context): Boolean {
-      if (VpnState.state != VpnState.State.STOPPED) return true
-      if (!prepareSaved(context)) return false
+      if (!configFile(context).exists()) return false
+      // Сразу «подключаемся»: интерфейс не должен успеть увидеть старое «выключено» с прошлой ошибкой.
+      VpnState.app = context.applicationContext
+      VpnState.set(VpnState.State.STARTING)
       try {
-        ContextCompat.startForegroundService(context, Intent(context, BoxVpnService::class.java))
+        ContextCompat.startForegroundService(
+          context, Intent(context, BoxVpnService::class.java).setAction(ACTION_START),
+        )
       } catch (e: Exception) {
         VpnState.set(VpnState.State.STOPPED, e.message)
         throw e
@@ -130,19 +130,18 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
       return true
     }
 
-    /** Разобрать сохранённый конфиг и перейти в «подключаемся». */
+    /** Разобрать сохранённый конфиг и перейти в «подключаемся» — уже внутри службы. */
     private fun prepareSaved(context: Context): Boolean {
       val file = configFile(context)
       if (!file.exists()) return false
       val json = JSONObject(file.readText())
       proxyPort = readProxyPort(json)
       val clash = json.optJSONObject("experimental")?.optJSONObject("clash_api")
-      api = clash?.let {
+      VpnState.api = clash?.let {
         val port = it.optString("external_controller").substringAfterLast(':').toIntOrNull()
         port?.let { p -> p to it.optString("secret") }
       }
       logFile(context).delete()
-      // Сразу «подключаемся»: интерфейс не должен успеть увидеть старое «выключено» с прошлой ошибкой.
       VpnState.set(VpnState.State.STARTING)
       return true
     }
@@ -161,21 +160,29 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
   private var server: CommandServer? = null
   private var tun: ParcelFileDescriptor? = null
 
-  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+  /** Ядро уже запускается или работает в этом экземпляре службы. */
+  private var running = false
+
+  override fun onCreate() {
+    super.onCreate()
     VpnState.app = applicationContext
+  }
+
+  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     if (intent?.action == ACTION_STOP) {
-      stopVpn(null)
+      if (running) stopVpn(null) else stopSelf()
       return START_NOT_STICKY
     }
-    // Always-on VPN: система сама запускает сервис с этим действием — подключаемся
-    // по сохранённому конфигу. Обычный запуск идёт через start() и уже в STARTING.
-    if (intent?.action == SERVICE_INTERFACE && VpnState.state == VpnState.State.STOPPED &&
-      !prepareSaved(this)
-    ) {
+    // Запуск из приложения, плитки, автозапуска (ACTION_START) или Always-on — тогда
+    // система сама шлёт SERVICE_INTERFACE. Повторный запуск во время работы игнорируем.
+    if (intent?.action != ACTION_START && intent?.action != SERVICE_INTERFACE) return START_NOT_STICKY
+    if (running) return START_NOT_STICKY
+    if (!prepareSaved(this)) {
+      VpnState.set(VpnState.State.STOPPED, "Нет сохранённого конфига — откройте приложение и подключитесь")
       stopSelf()
       return START_NOT_STICKY
     }
-    if (VpnState.state != VpnState.State.STARTING) return START_NOT_STICKY
+    running = true
     showNotification("Подключаемся…")
     worker.execute { startCore() }
     return START_NOT_STICKY
@@ -224,6 +231,7 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     runCatching { tun?.close() }
     tun = null
     network.stop()
+    running = false
     VpnState.set(VpnState.State.STOPPED, error)
     Handler(Looper.getMainLooper()).post {
       stopForeground(STOP_FOREGROUND_REMOVE)

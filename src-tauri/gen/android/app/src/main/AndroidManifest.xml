@@ -44,8 +44,11 @@
             </intent-filter>
         </activity>
 
+        <!-- VPN, плитка и автозапуск — в отдельном процессе: Tauri завершает основной
+             процесс при закрытии окна, а VPN должен работать дальше. -->
         <service
             android:name=".BoxVpnService"
+            android:process=":vpn"
             android:exported="false"
             android:foregroundServiceType="systemExempted|specialUse"
             android:permission="android.permission.BIND_VPN_SERVICE">
@@ -59,6 +62,7 @@
 
         <service
             android:name=".BoxTileService"
+            android:process=":vpn"
             android:exported="true"
             android:icon="@drawable/ic_vpn"
             android:label="ShredingerBox"
@@ -73,6 +77,7 @@
 
         <receiver
             android:name=".BootReceiver"
+            android:process=":vpn"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
