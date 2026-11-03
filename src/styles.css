@@ -1,0 +1,41 @@
+:root {
+  --bg: #0f1115;
+  --card: #171a21;
+  --raised: #222733;
+  --border: #2a303c;
+  --text: #e8eaf0;
+  --soft: #c9ceda;
+  --muted: #8b93a3;
+  --accent: #3ddc97;
+  --amber: #f5b83d;
+  --blue: #8fb8ff;
+  --danger: #f28b82;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, "Roboto", sans-serif;
+  font-size: 15px;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button { font: inherit; color: inherit; cursor: pointer; border: none; background: none; }
+
+/* Отступы под вырез камеры и системные панели. */
+.screen {
+  min-height: 100vh;
+  padding: calc(env(safe-area-inset-top) + 24px) 16px calc(env(safe-area-inset-bottom) + 24px);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  text-align: center;
+}
+
+.title { font-size: 22px; font-weight: 700; margin: 0; }
+.muted { color: var(--muted); margin: 0; }
+.version { color: var(--muted); font-size: 13px; }

@@ -10,3 +10,5 @@ src-tauri/gen/android/local.properties
 *.jks
 .idea/
 .DS_Store
+src-tauri/gen/schemas/
+.kotlin/
