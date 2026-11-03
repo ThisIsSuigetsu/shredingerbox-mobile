@@ -85,6 +85,17 @@ type Modal =
 /** Порт локального прокси — settings.rs::PROXY_PORT. */
 const PROXY = "127.0.0.1:2080";
 
+const FOLD_KEY = "shredingerbox.modeFolded";
+
+/** Удобства одного телефона в localStorage: может быть недоступен — тогда просто по умолчанию. */
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
 const st = {
   view: "home" as View,
   settings: {
@@ -108,6 +119,8 @@ const st = {
   /** null — ещё не проверяли, false — обновлений нет. */
   update: null as UpdateInfo | false | null,
   checkingUpdate: false,
+  /** Карточка «Режим» свёрнута — запоминается на этом телефоне. */
+  modeFolded: readFlag(FOLD_KEY),
   /** Расход по серверам за текущий месяц и скорость. */
   usage: { month: "", servers: {}, speed: { up: 0, down: 0 } } as MonthTraffic,
 };
@@ -132,6 +145,7 @@ const icon = {
   globe: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg>`,
   gear: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>`,
   plus: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>`,
+  chevron: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>`,
   x: (s = 14) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
   refresh: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16M20 20v-4h-4"/></svg>`,
   info: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>`,
@@ -358,12 +372,16 @@ function homeView(): string {
       <div class="status-month" id="usage-month">${esc(monthText())}</div>
       ${on ? speedsView() : ""}
     </section>
-    <section class="card">
-      <h2>Режим</h2>
+    <section class="card fold${st.modeFolded ? " folded" : ""}">
+      <button class="fold-head" data-action="fold-mode" aria-expanded="${!st.modeFolded}">
+        <h2>Режим${st.modeFolded ? ` <span class="count">· ${s.mode === "tun" ? "TUN" : "Прокси"}</span>` : ""}</h2>
+        <span class="chevron">${icon.chevron}</span>
+      </button>
+      ${st.modeFolded ? "" : `
       <div class="seg" role="group" aria-label="Режим">${modeOpt("tun", "TUN")}${modeOpt("proxy", "Прокси")}</div>
       ${s.mode === "tun"
         ? `<p class="card-hint">VPN для всего телефона — по правилам.</p>`
-        : `<div class="hint">${icon.info}<span>Без VPN: через прокси <b class="mono">${PROXY}</b> ходят только приложения, где он указан, — например, Telegram → Данные и память → Прокси (SOCKS5 или HTTP), или настройки Wi-Fi. Остальные идут напрямую.</span></div>`}
+        : `<div class="hint">${icon.info}<span>Без VPN: через прокси <b class="mono">${PROXY}</b> ходят только приложения, где он указан, — например, Telegram → Данные и память → Прокси (SOCKS5 или HTTP), или настройки Wi-Fi. Остальные идут напрямую.</span></div>`}`}
     </section>
     <section class="card">
       <div class="card-head"><h2>Серверы</h2>${s.servers.length ? `<button class="link-btn" data-action="ping" ${st.pinging ? "disabled" : ""}>${st.pinging ? "Меряем…" : "Проверить пинг"}</button>` : ""}</div>
@@ -864,6 +882,14 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       st.modal = null;
       return saveRules((r) => (r[m.list] = [...r[m.list], ...add]));
     }
+    case "fold-mode":
+      st.modeFolded = !st.modeFolded;
+      try {
+        localStorage.setItem(FOLD_KEY, st.modeFolded ? "1" : "");
+      } catch {
+        // Не запомнится — не страшно.
+      }
+      return render();
     case "set-mode": {
       const mode = el.dataset.mode as Mode;
       if (mode === s.mode) return;
