@@ -60,8 +60,13 @@
 
 ```bash
 npm install
+ARCHS=arm64 scripts/build-libbox.sh   # ядро sing-box → src-tauri/gen/android/app/libs/libbox.aar
 npx tauri android build --debug --apk --target aarch64
 ```
+
+`scripts/build-libbox.sh` скачивает исходники sing-box нужной версии в `build/`, ставит
+`gomobile` и собирает библиотеку только с теми протоколами, что умеет клиент. Без `ARCHS`
+собираются все четыре архитектуры — так нужно для релиза. На Windows скрипт запускается из Git Bash.
 
 Запуск на подключённом телефоне с перезагрузкой интерфейса на лету: `npx tauri android dev`.
 

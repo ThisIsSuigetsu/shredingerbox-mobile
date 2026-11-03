@@ -70,6 +70,8 @@ rust {
 }
 
 dependencies {
+    // Ядро sing-box, собирается scripts/build-libbox.sh.
+    implementation(files("libs/libbox.aar"))
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.activity:activity-ktx:1.10.1")

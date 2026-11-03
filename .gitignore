@@ -5,6 +5,7 @@ src-tauri/gen/android/app/build/
 src-tauri/gen/android/.gradle/
 src-tauri/gen/android/local.properties
 *.aar
+src-tauri/gen/android/app/libs/
 *.apk
 *.keystore
 *.jks
@@ -12,3 +13,4 @@ src-tauri/gen/android/local.properties
 .DS_Store
 src-tauri/gen/schemas/
 .kotlin/
+/build/
