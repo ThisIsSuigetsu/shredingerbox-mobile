@@ -97,6 +97,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .switch.on { background: var(--accent); }
 .switch.on span { background: var(--bg); transform: translateX(18px); }
 .modal-body .dashed { margin-top: 0; }
+.log-bar { gap: 4px; }
+.log-bar .card-hint { flex: 1; margin: 0; }
 .fold-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 34px; margin: -6px -6px 0; padding: 0 6px; border-radius: 10px; text-align: left; }
 .fold-head .chevron { color: var(--muted); display: flex; transition: transform .2s; }
 .fold.folded { padding-top: 12px; padding-bottom: 12px; }

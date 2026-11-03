@@ -86,7 +86,12 @@ type Modal =
 /** Порт локального прокси — settings.rs::PROXY_PORT. */
 const PROXY = "127.0.0.1:2080";
 
-const FOLD_KEY = "shredingerbox.modeFolded";
+/** Карточки, которые сворачиваются нажатием на заголовок. */
+type Fold = "mode" | "log";
+const FOLD_KEYS: Record<Fold, string> = {
+  mode: "shredingerbox.modeFolded",
+  log: "shredingerbox.logFolded",
+};
 
 /** Удобства одного телефона в localStorage: может быть недоступен — тогда просто по умолчанию. */
 function readFlag(key: string): boolean {
@@ -121,8 +126,8 @@ const st = {
   /** null — ещё не проверяли, false — обновлений нет. */
   update: null as UpdateInfo | false | null,
   checkingUpdate: false,
-  /** Карточка «Режим» свёрнута — запоминается на этом телефоне. */
-  modeFolded: readFlag(FOLD_KEY),
+  /** Свёрнутые карточки — запоминаются на этом телефоне. */
+  folded: { mode: readFlag(FOLD_KEYS.mode), log: readFlag(FOLD_KEYS.log) } as Record<Fold, boolean>,
   /** Расход по серверам за текущий месяц и скорость. */
   usage: { month: "", servers: {}, speed: { up: 0, down: 0 } } as MonthTraffic,
 };
@@ -338,6 +343,15 @@ function appIcon(pkg: string, name: string): string {
 
 // ---------- страницы ----------
 
+/** Заголовок сворачиваемой карточки; в свёрнутом виде рядом короткое состояние. */
+function foldHead(card: Fold, title: string, summary = ""): string {
+  const folded = st.folded[card];
+  return `<button class="fold-head" data-action="fold" data-fold="${card}" aria-expanded="${!folded}">
+    <h2>${title}${folded && summary ? ` <span class="count">· ${esc(summary)}</span>` : ""}</h2>
+    <span class="chevron">${icon.chevron}</span>
+  </button>`;
+}
+
 function serverRow(x: Server, removable: boolean): string {
   const f = splitFlag(x.name);
   const on = x.id === selectedServer()?.id;
@@ -375,12 +389,9 @@ function homeView(): string {
       <div class="status-month" id="usage-month">${esc(monthText())}</div>
       ${on ? speedsView() : ""}
     </section>
-    <section class="card fold${st.modeFolded ? " folded" : ""}">
-      <button class="fold-head" data-action="fold-mode" aria-expanded="${!st.modeFolded}">
-        <h2>Режим${st.modeFolded ? ` <span class="count">· ${s.mode === "tun" ? "TUN" : "Прокси"}</span>` : ""}</h2>
-        <span class="chevron">${icon.chevron}</span>
-      </button>
-      ${st.modeFolded ? "" : `
+    <section class="card fold${st.folded.mode ? " folded" : ""}">
+      ${foldHead("mode", "Режим", s.mode === "tun" ? "TUN" : "Прокси")}
+      ${st.folded.mode ? "" : `
       <div class="seg" role="group" aria-label="Режим">${modeOpt("tun", "TUN")}${modeOpt("proxy", "Прокси")}</div>
       ${s.mode === "tun"
         ? `<p class="card-hint">VPN для всего телефона — по правилам.</p>`
@@ -535,16 +546,15 @@ function settingsView(): string {
         <button class="btn-ghost" data-action="vpn-settings">Открыть</button>
       </div>
     </section>
-    <section class="card">
-      <div class="card-head">
-        <h2>Журнал ядра</h2>
-        <div class="row">
-          <button class="x-btn" data-action="log-refresh" aria-label="Обновить журнал">${icon.refresh}</button>
-          <button class="link-btn" data-action="log-copy">Скопировать</button>
-        </div>
+    <section class="card fold${st.folded.log ? " folded" : ""}">
+      ${foldHead("log", "Журнал ядра")}
+      ${st.folded.log ? "" : `
+      <div class="row log-bar">
+        <p class="card-hint">Записи sing-box — пригодятся, если что-то не работает.</p>
+        <button class="x-btn" data-action="log-refresh" aria-label="Обновить журнал">${icon.refresh}</button>
+        <button class="link-btn" data-action="log-copy">Скопировать</button>
       </div>
-      <p class="card-hint">Записи sing-box — пригодятся, если что-то не работает.</p>
-      <pre class="code" id="log-text">${esc(st.log || "Журнал пуст — подключитесь, и здесь появятся записи ядра.")}</pre>
+      <pre class="code" id="log-text">${esc(st.log || "Журнал пуст — подключитесь, и здесь появятся записи ядра.")}</pre>`}
     </section>`;
 }
 
@@ -750,7 +760,7 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       window.scrollTo(0, 0);
       render();
       if (st.view === "rules") loadApps();
-      if (st.view === "settings") loadLog();
+      if (st.view === "settings" && !st.folded.log) loadLog();
       return;
     case "toggle":
       return act(async () => {
@@ -944,14 +954,18 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
         toast(errText(e), true);
       }
       return;
-    case "fold-mode":
-      st.modeFolded = !st.modeFolded;
+    case "fold": {
+      const card = el.dataset.fold as Fold;
+      st.folded[card] = !st.folded[card];
       try {
-        localStorage.setItem(FOLD_KEY, st.modeFolded ? "1" : "");
+        localStorage.setItem(FOLD_KEYS[card], st.folded[card] ? "1" : "");
       } catch {
         // Не запомнится — не страшно.
       }
-      return render();
+      render();
+      if (card === "log" && !st.folded.log) loadLog();
+      return;
+    }
     case "set-mode": {
       const mode = el.dataset.mode as Mode;
       if (mode === s.mode) return;
