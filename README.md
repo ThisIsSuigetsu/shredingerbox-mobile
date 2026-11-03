@@ -45,9 +45,13 @@
 - [x] Сборка подписанного APK в GitHub Actions (вместе со сборкой libbox).
 - [x] Своё обновление: проверить релиз на GitHub, скачать APK и открыть установщик.
 
-### Этап 4 — iOS
+### Этап 4 — iOS (отложен)
+Пока клиент для своих, iOS не делаем: для VPN на iPhone нужен платный аккаунт Apple Developer
+(бесплатный Apple ID не даёт Network Extension), а для App Store — ещё и юрлицо. На iPhone
+подписка работает в готовых клиентах на sing-box и Xray.
+
 - [ ] Network Extension с libbox, тот же интерфейс и Rust-логика.
-- [ ] Раздача через TestFlight или AltStore.
+- [ ] Раздача через TestFlight или Ad Hoc (AltStore с бесплатной подписью VPN не поднимет).
 
 ## Что нужно для сборки
 
