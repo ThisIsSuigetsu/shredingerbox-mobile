@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { mascot, Mood } from "./mascot";
+import { changesOf, notesHtml } from "./changelog";
 
 declare const __APP_VERSION__: string;
 
@@ -81,7 +82,8 @@ type Modal =
   | { kind: "clipboard"; text: string; busy: boolean; from: "clipboard" | "link" }
   | { kind: "add-app"; list: AppList; filter: string; picked: Set<string> }
   | { kind: "add-sites"; list: SiteList; text: string }
-  | { kind: "update"; info: UpdateInfo; busy: boolean };
+  | { kind: "update"; info: UpdateInfo; busy: boolean }
+  | { kind: "whats-new"; version: string; text: string };
 
 /** Порт локального прокси - settings.rs::PROXY_PORT. */
 const PROXY = "127.0.0.1:2080";
@@ -603,10 +605,17 @@ function modalView(): string {
       <div class="modal-body">
         <div class="row">${mascot(56, "wink")}<p class="lead">Сейчас установлена ${esc(i.current)}.${i.size ? ` Скачается ${mb(i.size)}.` : ""}
           После загрузки Android попросит подтвердить установку.</p></div>
-        ${i.notes ? `<pre class="code notes">${esc(i.notes)}</pre>` : ""}
+        ${i.notes ? notesHtml(i.notes) : ""}
       </div>
       <div class="modal-foot"><button class="btn-ghost" data-action="snooze-update" ${m.busy ? "disabled" : ""}>Позже</button><span class="grow"></span>
         <button class="btn-accent" data-action="install-update" ${m.busy ? "disabled" : ""}>${m.busy ? "Скачиваем…" : "Обновить"}</button></div>`;
+  } else if (m.kind === "whats-new") {
+    body = `${head(`Что нового в ${esc(m.version)}`)}
+      <div class="modal-body">
+        <div class="row">${mascot(56, "peek")}<p class="lead">Приложение обновилось. Вот что изменилось:</p></div>
+        ${notesHtml(m.text)}
+      </div>
+      <div class="modal-foot"><span class="grow"></span><button class="btn-accent" data-action="close-modal">Понятно</button></div>`;
   } else if (m.kind === "add-app") {
     body = `${head(LIST_TITLE[m.list])}
       <div class="modal-body">
@@ -860,10 +869,15 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
     case "overlay":
       if (ev.target !== el) return;
     // fallthrough: нажатие мимо окна закрывает его
-    case "close-modal":
+    case "close-modal": {
+      const was = st.modal?.kind;
       if (st.modal?.kind === "clipboard") clipDismissed = st.modal.text;
       st.modal = null;
-      return render();
+      render();
+      // Пока висело «Что нового», могли прийти ссылка или ключ в буфере.
+      if (was === "whats-new") onReturn();
+      return;
+    }
     case "set-final":
       if (s.rules.final_route === el.dataset.value) return;
       return saveRules((r) => (r.final_route = el.dataset.value as FinalRoute));
@@ -1053,6 +1067,28 @@ root.addEventListener("change", (ev) => {
 /** Версия, от которой отказались «Позже», - до перезапуска больше не предлагаем. */
 let updateSnoozed = "";
 
+const SEEN_KEY = "shredingerbox.seenVersion";
+
+/**
+ * После обновления показать, что изменилось в этой версии. Версию, которую уже видели,
+ * помним на телефоне. При первой установке окна нет: показывать ещё нечего.
+ */
+function checkWhatsNew() {
+  let seen: string | null = null;
+  try {
+    seen = localStorage.getItem(SEEN_KEY);
+    localStorage.setItem(SEEN_KEY, __APP_VERSION__);
+  } catch {
+    return;
+  }
+  // До 0.4.2 версию не запоминали - обновившихся узнаём по уже добавленным серверам.
+  const updated = seen ? seen !== __APP_VERSION__ : st.settings.servers.length > 0;
+  const text = changesOf(__APP_VERSION__);
+  if (!updated || !text || st.modal) return;
+  st.modal = { kind: "whats-new", version: __APP_VERSION__, text };
+  render();
+}
+
 async function checkUpdate(manual = false) {
   if (st.checkingUpdate) return;
   st.checkingUpdate = true;
@@ -1103,7 +1139,8 @@ async function checkLink() {
 
 /** Ссылка важнее буфера обмена: её открыли нарочно. */
 async function onReturn() {
-  if (document.visibilityState !== "visible") return;
+  // Открытое окно не перебиваем: ссылка ждёт в Android, пока его не закроют.
+  if (document.visibilityState !== "visible" || st.modal) return;
   await checkLink();
   await checkClipboard();
 }
@@ -1153,6 +1190,8 @@ async function migrateOldKey() {
   pingAll();
   refreshUsage();
   // Сразу после запуска окно может ещё не получить фокус - буфер вернёт пусто.
+  // Сначала «Что нового»: буфер обмена и ссылка подождут, пока окно закроют.
+  checkWhatsNew();
   setTimeout(onReturn, 700);
   // Буфер обмена важнее: обновление предложим, только если окно ещё свободно.
   setTimeout(checkUpdate, 2500);

@@ -104,7 +104,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .fold.folded { padding-top: 12px; padding-bottom: 12px; }
 .fold.folded .chevron { transform: rotate(180deg); }
 .btn-accent.small { height: 40px; padding: 0 16px; font-size: 14px; }
-pre.code.notes { max-height: 30vh; font-size: 12px; background: var(--bg); }
+.notes { background: var(--bg); border-radius: 12px; padding: 12px 14px; font-size: 14px; line-height: 1.5; color: var(--soft); user-select: text; }
+.notes p { margin: 0 0 8px; }
+.notes ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
+.notes p:last-child, .notes ul:last-child { margin-bottom: 0; }
+.notes code { font: 12px ui-monospace, "Roboto Mono", monospace; background: var(--chip); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
 .sep { height: 1px; background: #232831; margin: 12px 0 10px; }
 
 .seg { display: flex; gap: 4px; padding: 4px; background: var(--bg); border-radius: 12px; }
