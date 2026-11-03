@@ -28,7 +28,7 @@ jobs:
         run: |
           version="$(node -p "require('./package.json').version")"
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Метка $GITHUB_REF_NAME, а в package.json $version — поднимите версию в package.json, tauri.conf.json и Cargo.toml"
+            echo "::error::Метка $GITHUB_REF_NAME, а в package.json $version - поднимите версию в package.json, tauri.conf.json и Cargo.toml"
             exit 1
           fi
 
@@ -43,7 +43,7 @@ jobs:
             found { print }
           ' CHANGELOG.md > "$RUNNER_TEMP/changes.md"
           if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/changes.md"; then
-            echo "::error::В CHANGELOG.md нет раздела «## $version» — допишите, что изменилось"
+            echo "::error::В CHANGELOG.md нет раздела «## $version» - допишите, что изменилось"
             exit 1
           fi
           {
@@ -51,8 +51,8 @@ jobs:
             echo
             echo "**Первая установка**"
             echo "1. Скачайте файл \`.apk\` ниже на телефон."
-            echo "2. Откройте его. Android спросит, можно ли устанавливать приложения из браузера или «Файлов», — разрешите."
-            echo "3. Откройте ShredingerBox и добавьте подписку или ключ, которые вам прислали: вставьте в «Добавить», отсканируйте QR-код или просто скопируйте — приложение предложит добавить само."
+            echo "2. Откройте его. Android спросит, можно ли устанавливать приложения из браузера или «Файлов», - разрешите."
+            echo "3. Откройте ShredingerBox и добавьте подписку или ключ, которые вам прислали: вставьте в «Добавить», отсканируйте QR-код или просто скопируйте - приложение предложит добавить само."
             echo "4. Нажмите большую кнопку. В первый раз Android попросит разрешить VPN."
           } > "$RUNNER_TEMP/release.md"
 
