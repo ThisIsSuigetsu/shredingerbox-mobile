@@ -1,8 +1,17 @@
 package org.shredingerbox.mobile
 
 import android.app.Activity
+import android.app.StatusBarManager
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Intent
+import android.graphics.drawable.Icon
+import android.os.Build
+import android.provider.Settings
+import android.webkit.WebView
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
@@ -31,9 +40,90 @@ class InstallArgs {
   lateinit var path: String
 }
 
+@InvokeArg
+class FlagArgs {
+  var on: Boolean = false
+}
+
 /** Команды VPN для Rust-части (src-tauri/src/vpn.rs). */
 @TauriPlugin
 class VpnPlugin(private val activity: Activity) : Plugin(activity) {
+  /** Ссылка shredingerbox://add?url=…, которой открыли приложение; забирается командой takeLink. */
+  @Volatile private var pendingLink: String? = null
+
+  override fun load(webView: WebView) {
+    VpnState.app = activity.applicationContext
+    remember(activity.intent)
+  }
+
+  override fun onNewIntent(intent: Intent) = remember(intent)
+
+  private fun remember(intent: Intent?) {
+    val uri = intent?.data ?: return
+    if (intent.action != Intent.ACTION_VIEW || uri.scheme != "shredingerbox") return
+    pendingLink = uri.getQueryParameter("url")?.trim()?.takeIf { it.isNotEmpty() }
+    // Повторный поворот экрана не должен предложить ту же ссылку ещё раз.
+    intent.data = null
+  }
+
+  @Command
+  fun takeLink(invoke: Invoke) {
+    val link = pendingLink
+    pendingLink = null
+    invoke.resolve(JSObject().put("text", link))
+  }
+
+  /** Свежий конфиг для плитки, автозапуска и Always-on — без подключения. */
+  @Command
+  fun saveConfig(invoke: Invoke) {
+    val args = invoke.parseArgs(StartArgs::class.java)
+    BoxVpnService.saveConfig(activity, args.config)
+    invoke.resolve()
+  }
+
+  @Command
+  fun setAutostart(invoke: Invoke) {
+    BootReceiver.setAutostart(activity, invoke.parseArgs(FlagArgs::class.java).on)
+    invoke.resolve()
+  }
+
+  /** Системные настройки VPN — там включается Always-on («Постоянная VPN»). */
+  @Command
+  fun openVpnSettings(invoke: Invoke) {
+    try {
+      activity.startActivity(Intent(Settings.ACTION_VPN_SETTINGS))
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject("Не удалось открыть настройки VPN: ${e.message}")
+    }
+  }
+
+  /** Попросить систему добавить плитку в шторку (Android 13+); раньше — только вручную. */
+  @Command
+  fun addTile(invoke: Invoke) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+      invoke.resolve(JSObject().put("supported", false))
+      return
+    }
+    val manager = activity.getSystemService(StatusBarManager::class.java)
+    manager.requestAddTileService(
+      ComponentName(activity, BoxTileService::class.java),
+      "ShredingerBox",
+      Icon.createWithResource(activity, R.drawable.ic_vpn),
+      activity.mainExecutor,
+    ) { }
+    invoke.resolve(JSObject().put("supported", true))
+  }
+
+  /** Отсканировать QR-код с ключом или подпиской. null — пользователь закрыл сканер. */
+  @Command
+  fun scanQr(invoke: Invoke) {
+    val options = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+    GmsBarcodeScanning.getClient(activity, options).startScan()
+      .addOnSuccessListener { invoke.resolve(JSObject().put("text", it.rawValue)) }
+      .addOnCanceledListener { invoke.resolve(JSObject().put("text", null as String?)) }
+      .addOnFailureListener { invoke.reject("Сканер QR-кодов недоступен: ${it.message}") }
+  }
   /** Разрешение на VPN: системное окно появляется, только если его ещё не давали. */
   @Command
   fun prepare(invoke: Invoke) {
@@ -149,10 +239,13 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
   @Command
   fun status(invoke: Invoke) {
-    invoke.resolve(
-      JSObject()
-        .put("state", VpnState.state.name.lowercase())
-        .put("error", VpnState.error),
-    )
+    val result = JSObject()
+      .put("state", VpnState.state.name.lowercase())
+      .put("error", VpnState.error)
+    // Clash API ядра — Rust подхватывает его, если подключились без приложения.
+    BoxVpnService.api?.let { (port, secret) ->
+      result.put("api", JSObject().put("port", port).put("secret", secret))
+    }
+    invoke.resolve(result)
   }
 }

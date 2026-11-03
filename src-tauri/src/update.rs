@@ -34,6 +34,12 @@ fn parse_version(s: &str) -> Option<(u64, u64, u64)> {
     Some((parts.next()??, parts.next().flatten().unwrap_or(0), parts.next().flatten().unwrap_or(0)))
 }
 
+/// Описание релиза без инструкции для первой установки (её пишет release.yml):
+/// тому, кто обновляется, она не нужна.
+fn notes(body: &str) -> String {
+    body.split("**Первая установка**").next().unwrap_or_default().trim().to_string()
+}
+
 /// Последний релиз на GitHub, если он новее `current` и в нём есть APK.
 pub async fn check(current: &str) -> Result<Option<UpdateInfo>, String> {
     let text = client(Duration::from_secs(15))?
@@ -64,7 +70,7 @@ pub async fn check(current: &str) -> Result<Option<UpdateInfo>, String> {
     Ok(Some(UpdateInfo {
         version: tag.trim_start_matches('v').to_string(),
         current: current.to_string(),
-        notes: release["body"].as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string),
+        notes: release["body"].as_str().map(notes).filter(|s| !s.is_empty()),
         url: apk["browser_download_url"].as_str().unwrap_or_default().to_string(),
         size: apk["size"].as_u64().unwrap_or(0),
     }))
@@ -98,5 +104,11 @@ mod tests {
         assert_eq!(parse_version("v1.0.0-beta.1"), Some((1, 0, 0)));
         assert_eq!(parse_version("nightly"), None);
         assert!(parse_version("v0.10.0") > parse_version("v0.9.9"));
+    }
+
+    #[test]
+    fn notes_without_install_guide() {
+        assert_eq!(notes("Что нового.\n\n**Первая установка**\n1. Скачайте"), "Что нового.");
+        assert_eq!(notes("  Только текст  "), "Только текст");
     }
 }

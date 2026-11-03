@@ -13,6 +13,7 @@ const settings = {
   subscriptions: [{ url: SUB, name: "Friends VPN" }],
   selected: "a1" as string | null,
   mode: "tun",
+  autostart: false,
   rules: {
     final_route: "direct",
     proxy_apps: [{ name: "Telegram", package: "org.telegram.messenger" }],
@@ -23,6 +24,7 @@ const settings = {
   } as unknown,
 };
 let state = "stopped";
+let linkOnce = false;
 
 const PRESETS = [
   { id: "youtube", title: "YouTube", domains: ["youtube.com"] },
@@ -70,6 +72,17 @@ mockIPC((cmd, args) => {
     case "set_rules":
       settings.rules = a.rules;
       return copy();
+    case "set_autostart":
+      settings.autostart = a.on;
+      return copy();
+    case "add_tile":
+      return true;
+    case "open_vpn_settings":
+      return null;
+    case "take_link":
+      return linkOnce ? null : ((linkOnce = true), "https://panel.example.org/sub/abc");
+    case "scan_qr":
+      return "hy2://pass@hy.example.org:443#%F0%9F%87%A9%F0%9F%87%AA%20QR";
     case "set_mode":
       settings.mode = a.mode;
       return copy();

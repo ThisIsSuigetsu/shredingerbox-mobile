@@ -87,6 +87,8 @@ pub struct Settings {
     pub subscriptions: Vec<Subscription>,
     pub selected: Option<String>,
     pub mode: Mode,
+    /// Подключаться после включения телефона.
+    pub autostart: bool,
     pub rules: Rules,
 }
 

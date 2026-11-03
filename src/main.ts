@@ -41,6 +41,7 @@ interface Settings {
   subscriptions: Subscription[];
   selected: string | null;
   mode: Mode;
+  autostart: boolean;
   rules: Rules;
 }
 interface UpdateInfo {
@@ -77,7 +78,7 @@ interface AppInfo {
 }
 type Modal =
   | { kind: "add-server"; text: string; busy: boolean }
-  | { kind: "clipboard"; text: string; busy: boolean }
+  | { kind: "clipboard"; text: string; busy: boolean; from: "clipboard" | "link" }
   | { kind: "add-app"; list: AppList; filter: string; picked: Set<string> }
   | { kind: "add-sites"; list: SiteList; text: string }
   | { kind: "update"; info: UpdateInfo; busy: boolean };
@@ -103,6 +104,7 @@ const st = {
     subscriptions: [],
     selected: null,
     mode: "tun",
+    autostart: false,
     rules: { final_route: "direct", proxy_apps: [], direct_apps: [], proxy_domains: [], direct_domains: [], presets: [] },
   } as Settings,
   state: "stopped" as State,
@@ -145,6 +147,7 @@ const icon = {
   globe: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg>`,
   gear: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>`,
   plus: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>`,
+  qr: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg>`,
   chevron: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>`,
   x: (s = 14) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`,
   refresh: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16M20 20v-4h-4"/></svg>`,
@@ -518,6 +521,21 @@ function settingsView(): string {
       </div>
     </section>
     <section class="card">
+      <h2>Запуск</h2>
+      <div class="set-row">
+        <div class="t"><b>При включении телефона</b><span>Подключаться сразу после перезагрузки</span></div>
+        <button class="switch ${st.settings.autostart ? "on" : ""}" data-action="toggle-autostart" role="switch" aria-checked="${st.settings.autostart}" aria-label="Подключаться при включении телефона"><span></span></button>
+      </div>
+      <div class="set-row">
+        <div class="t"><b>Плитка в шторке</b><span>Включать VPN, не открывая приложение</span></div>
+        <button class="btn-ghost" data-action="add-tile">Добавить</button>
+      </div>
+      <div class="set-row">
+        <div class="t"><b>Постоянная VPN</b><span>Android сам держит VPN включённым и не пускает трафик мимо него</span></div>
+        <button class="btn-ghost" data-action="vpn-settings">Открыть</button>
+      </div>
+    </section>
+    <section class="card">
       <div class="card-head">
         <h2>Журнал ядра</h2>
         <div class="row">
@@ -560,12 +578,13 @@ function modalView(): string {
       <div class="modal-body">
         <textarea class="field" id="modal-text" rows="5" spellcheck="false" autocomplete="off"
           placeholder="Ключи vless://, hy2://, trojan://, ss:// — по одному на строку, или ссылка на подписку https://…">${esc(m.text)}</textarea>
+        <button class="dashed" data-action="scan-qr">${icon.qr}Сканировать QR-код</button>
       </div>
       <div class="modal-foot"><button class="btn-ghost" data-action="close-modal">Отмена</button><span class="grow"></span>
         <button class="btn-accent" data-action="submit-server" ${m.busy ? "disabled" : ""}>${m.busy ? "Добавляем…" : "Добавить"}</button></div>`;
   } else if (m.kind === "clipboard") {
-    body = `${head("Добавить из буфера обмена?")}
-      <div class="modal-body"><p class="lead">В буфере обмена ${esc(clipSummary(m.text))}.</p></div>
+    body = `${head(m.from === "link" ? "Добавить по ссылке?" : "Добавить из буфера обмена?")}
+      <div class="modal-body"><p class="lead">${m.from === "link" ? "Это" : "В буфере обмена"} ${esc(clipSummary(m.text))}.</p></div>
       <div class="modal-foot"><button class="btn-ghost" data-action="dismiss-clipboard">Не сейчас</button><span class="grow"></span>
         <button class="btn-accent" data-action="accept-clipboard" ${m.busy ? "disabled" : ""}>${m.busy ? "Добавляем…" : "Добавить"}</button></div>`;
   } else if (m.kind === "update") {
@@ -882,6 +901,49 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       st.modal = null;
       return saveRules((r) => (r[m.list] = [...r[m.list], ...add]));
     }
+    case "scan-qr": {
+      const m = st.modal;
+      if (m?.kind !== "add-server") return;
+      try {
+        const text = await invoke<string | null>("scan_qr");
+        if (!text) return;
+        // Код с ключом или подпиской — сразу в поле; добавить можно одной кнопкой.
+        m.text = m.text.trim() ? `${m.text.trim()}\n${text.trim()}` : text.trim();
+        render();
+      } catch (e) {
+        toast(errText(e), true);
+      }
+      return;
+    }
+    case "toggle-autostart": {
+      const on = !s.autostart;
+      s.autostart = on;
+      render();
+      try {
+        st.settings = await invoke<Settings>("set_autostart", { on });
+      } catch (e) {
+        s.autostart = !on;
+        toast(errText(e), true);
+      }
+      return render();
+    }
+    case "add-tile":
+      try {
+        if (!(await invoke<boolean>("add_tile"))) {
+          toast("Откройте шторку, нажмите карандаш и перетащите плитку ShredingerBox наверх");
+        }
+      } catch (e) {
+        toast(errText(e), true);
+      }
+      return;
+    case "vpn-settings":
+      try {
+        await invoke("open_vpn_settings");
+        toast("Нажмите шестерёнку у ShredingerBox и включите «Постоянная VPN»");
+      } catch (e) {
+        toast(errText(e), true);
+      }
+      return;
     case "fold-mode":
       st.modeFolded = !st.modeFolded;
       try {
@@ -1006,16 +1068,35 @@ async function checkClipboard() {
   try {
     const text = await invoke<string | null>("clipboard_candidate");
     if (!text || text === clipDismissed || st.modal) return;
-    st.modal = { kind: "clipboard", text, busy: false };
+    st.modal = { kind: "clipboard", text, busy: false, from: "clipboard" };
     render();
   } catch {
     // Буфер недоступен — молча пропускаем.
   }
 }
 
+/** Приложение открыли ссылкой shredingerbox://add?url=… — предлагаем добавить. */
+async function checkLink() {
+  try {
+    const text = await invoke<string | null>("take_link");
+    if (!text) return;
+    st.modal = { kind: "clipboard", text, busy: false, from: "link" };
+    render();
+  } catch {
+    // Нет ссылки — нечего предлагать.
+  }
+}
+
+/** Ссылка важнее буфера обмена: её открыли нарочно. */
+async function onReturn() {
+  if (document.visibilityState !== "visible") return;
+  await checkLink();
+  await checkClipboard();
+}
+
 // Буфер читается только когда окно в фокусе — проверяем при каждом возвращении в приложение.
-window.addEventListener("focus", checkClipboard);
-document.addEventListener("visibilitychange", checkClipboard);
+window.addEventListener("focus", onReturn);
+document.addEventListener("visibilitychange", onReturn);
 
 // ---------- запуск ----------
 
@@ -1058,7 +1139,7 @@ async function migrateOldKey() {
   pingAll();
   refreshUsage();
   // Сразу после запуска окно может ещё не получить фокус — буфер вернёт пусто.
-  setTimeout(checkClipboard, 700);
+  setTimeout(onReturn, 700);
   // Буфер обмена важнее: обновление предложим, только если окно ещё свободно.
   setTimeout(checkUpdate, 2500);
 })();

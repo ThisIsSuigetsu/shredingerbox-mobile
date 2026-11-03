@@ -76,26 +76,75 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
      */
     @Volatile private var proxyPort = 0
 
-    fun start(context: Context, config: String) {
-      if (VpnState.state != VpnState.State.STOPPED) return
+    /**
+     * Clash API запущенного ядра «порт» to «пароль». Rust узнаёт его отсюда, если ядро
+     * запустили без приложения — плиткой, при включении телефона или Always-on.
+     */
+    @Volatile var api: Pair<Int, String>? = null
+      private set
+
+    /**
+     * Сохранить конфиг, не запуская ядро. Rust присылает свежий конфиг после каждого
+     * изменения настроек — по нему подключаются плитка, автозапуск и Always-on.
+     */
+    fun saveConfig(context: Context, config: String) {
       // Путь к журналу знает только Android-сторона, поэтому дописываем его в конфиг здесь.
       val json = JSONObject(config)
-      val inbounds = json.optJSONArray("inbounds")
-      val list = (0 until (inbounds?.length() ?: 0)).map { inbounds!!.getJSONObject(it) }
-      proxyPort = if (list.any { it.optString("type") == "tun" }) 0
-        else list.firstOrNull { it.optString("type") == "mixed" }?.optInt("listen_port") ?: 0
       val log = json.optJSONObject("log") ?: JSONObject().also { json.put("log", it) }
       log.put("output", logFile(context).path)
-      logFile(context).delete()
       configFile(context).writeText(json.toString())
-      // Сразу «подключаемся»: интерфейс не должен успеть увидеть старое «выключено» с прошлой ошибкой.
-      VpnState.set(VpnState.State.STARTING)
+    }
+
+    fun start(context: Context, config: String) {
+      if (VpnState.state != VpnState.State.STOPPED) return
+      saveConfig(context, config)
+      startSaved(context)
+    }
+
+    /** Режим «Прокси» в сохранённом конфиге: VPN не нужен. */
+    private fun readProxyPort(json: JSONObject): Int {
+      val inbounds = json.optJSONArray("inbounds")
+      val list = (0 until (inbounds?.length() ?: 0)).map { inbounds!!.getJSONObject(it) }
+      return if (list.any { it.optString("type") == "tun" }) 0
+        else list.firstOrNull { it.optString("type") == "mixed" }?.optInt("listen_port") ?: 0
+    }
+
+    /** Нужно ли сначала дать разрешение на VPN (окно показывает только приложение). */
+    fun needsPermission(context: Context): Boolean {
+      val file = configFile(context)
+      if (!file.exists()) return false
+      val proxy = runCatching { readProxyPort(JSONObject(file.readText())) > 0 }.getOrDefault(false)
+      return !proxy && VpnService.prepare(context) != null
+    }
+
+    /** Подключиться по последнему сохранённому конфигу. false — конфига ещё нет. */
+    fun startSaved(context: Context): Boolean {
+      if (VpnState.state != VpnState.State.STOPPED) return true
+      if (!prepareSaved(context)) return false
       try {
         ContextCompat.startForegroundService(context, Intent(context, BoxVpnService::class.java))
       } catch (e: Exception) {
         VpnState.set(VpnState.State.STOPPED, e.message)
         throw e
       }
+      return true
+    }
+
+    /** Разобрать сохранённый конфиг и перейти в «подключаемся». */
+    private fun prepareSaved(context: Context): Boolean {
+      val file = configFile(context)
+      if (!file.exists()) return false
+      val json = JSONObject(file.readText())
+      proxyPort = readProxyPort(json)
+      val clash = json.optJSONObject("experimental")?.optJSONObject("clash_api")
+      api = clash?.let {
+        val port = it.optString("external_controller").substringAfterLast(':').toIntOrNull()
+        port?.let { p -> p to it.optString("secret") }
+      }
+      logFile(context).delete()
+      // Сразу «подключаемся»: интерфейс не должен успеть увидеть старое «выключено» с прошлой ошибкой.
+      VpnState.set(VpnState.State.STARTING)
+      return true
     }
 
     fun stop(context: Context) {
@@ -113,11 +162,19 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
   private var tun: ParcelFileDescriptor? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    VpnState.app = applicationContext
     if (intent?.action == ACTION_STOP) {
       stopVpn(null)
       return START_NOT_STICKY
     }
-    // Запуск идёт только через start(), который переводит состояние в STARTING.
+    // Always-on VPN: система сама запускает сервис с этим действием — подключаемся
+    // по сохранённому конфигу. Обычный запуск идёт через start() и уже в STARTING.
+    if (intent?.action == SERVICE_INTERFACE && VpnState.state == VpnState.State.STOPPED &&
+      !prepareSaved(this)
+    ) {
+      stopSelf()
+      return START_NOT_STICKY
+    }
     if (VpnState.state != VpnState.State.STARTING) return START_NOT_STICKY
     showNotification("Подключаемся…")
     worker.execute { startCore() }

@@ -23,6 +23,7 @@ struct AppState {
     /// Clash API запущенного ядра; новый порт и пароль на каждое подключение.
     api: Mutex<Option<config::Api>>,
     traffic: traffic::Traffic,
+    app: AppHandle,
 }
 
 impl AppState {
@@ -33,8 +34,20 @@ impl AppState {
     fn store(&self, s: Settings) -> Result<(), String> {
         s.save(&self.path)?;
         *self.settings.lock().unwrap() = s;
+        let app = self.app.clone();
+        tauri::async_runtime::spawn(async move { sync_config(&app).await });
         Ok(())
     }
+}
+
+/// Отдать Android-стороне конфиг по текущим настройкам: по нему подключаются плитка
+/// в шторке, автозапуск и Always-on, когда приложение не открыто.
+async fn sync_config(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let Ok(api) = new_api() else { return };
+    // Серверов ещё нет — подключаться не к чему, старый конфиг не трогаем.
+    let Ok(config) = build_config(&state.snapshot(), &api) else { return };
+    let _ = vpn::call::<_, Value>(app, "saveConfig", json!({ "config": config.to_string() })).await;
 }
 
 fn server_tag(id: &str) -> String {
@@ -246,14 +259,14 @@ async fn ping_servers(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<
 }
 
 #[derive(Deserialize)]
-struct Clipboard {
+struct ClipboardText {
     text: Option<String>,
 }
 
 /// Ключи или ссылка подписки из буфера обмена, которых ещё нет в списке.
 #[tauri::command]
 async fn clipboard_candidate(app: AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String> {
-    let clip: Clipboard = vpn::call(&app, "clipboard", ()).await?;
+    let clip: ClipboardText = vpn::call(&app, "clipboard", ()).await?;
     let Some(candidate) = clip.text.as_deref().and_then(links::clipboard_candidate) else {
         return Ok(None);
     };
@@ -305,6 +318,54 @@ async fn set_mode(app: AppHandle, state: State<'_, AppState>, mode: Mode) -> Res
         restart(&app, &state, &s).await?;
     }
     Ok(s)
+}
+
+// ---------- запуск без приложения, ссылки, QR ----------
+
+#[tauri::command]
+async fn set_autostart(app: AppHandle, state: State<'_, AppState>, on: bool) -> Result<Settings, String> {
+    let _: Value = vpn::call(&app, "setAutostart", json!({ "on": on })).await?;
+    let mut s = state.snapshot();
+    s.autostart = on;
+    state.store(s.clone())?;
+    Ok(s)
+}
+
+#[tauri::command]
+async fn open_vpn_settings(app: AppHandle) -> Result<(), String> {
+    let _: Value = vpn::call(&app, "openVpnSettings", ()).await?;
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct Supported {
+    supported: bool,
+}
+
+/// Предложить добавить плитку в шторку. false — Android старше 13, только вручную.
+#[tauri::command]
+async fn add_tile(app: AppHandle) -> Result<bool, String> {
+    let r: Supported = vpn::call(&app, "addTile", ()).await?;
+    Ok(r.supported)
+}
+
+#[derive(Deserialize)]
+struct Text {
+    text: Option<String>,
+}
+
+/// Подписка или ключ из ссылки shredingerbox://add?url=…, которой открыли приложение.
+#[tauri::command]
+async fn take_link(app: AppHandle) -> Result<Option<String>, String> {
+    let r: Text = vpn::call(&app, "takeLink", ()).await?;
+    Ok(r.text)
+}
+
+/// Отсканировать QR-код. None — сканер закрыли.
+#[tauri::command]
+async fn scan_qr(app: AppHandle) -> Result<Option<String>, String> {
+    let r: Text = vpn::call(&app, "scanQr", ()).await?;
+    Ok(r.text)
 }
 
 // ---------- обновления ----------
@@ -375,15 +436,36 @@ struct Status {
     state: String,
     /// Почему ядро остановилось, если не по кнопке.
     error: Option<String>,
+    /// Clash API запущенного ядра — интерфейсу не нужен.
+    #[serde(default, skip_serializing)]
+    api: Option<RunningApi>,
+}
+
+#[derive(Deserialize)]
+struct RunningApi {
+    port: u16,
+    secret: String,
 }
 
 async fn status(app: &AppHandle) -> Result<Status, String> {
     vpn::call(app, "status", ()).await
 }
 
+/// Если ядро запустили без приложения (плиткой, при включении телефона, Always-on),
+/// подхватываем его Clash API: тогда работают пинг через VPN, мгновенное
+/// переключение и счётчик трафика.
 #[tauri::command]
-async fn vpn_status(app: AppHandle) -> Result<Status, String> {
-    status(&app).await
+async fn vpn_status(app: AppHandle, state: State<'_, AppState>) -> Result<Status, String> {
+    let s = status(&app).await?;
+    if let (true, Some(running)) = (s.state == "started", &s.api) {
+        let mut api = state.api.lock().unwrap();
+        if api.as_ref().map(|a| a.secret.as_str()) != Some(running.secret.as_str()) {
+            let adopted = config::Api { port: running.port, secret: running.secret.clone() };
+            *api = Some(adopted.clone());
+            traffic::spawn_counter(app.clone(), adopted);
+        }
+    }
+    Ok(s)
 }
 
 #[derive(Serialize)]
@@ -425,7 +507,11 @@ pub fn run() {
                 path,
                 api: Mutex::new(None),
                 traffic: traffic::Traffic::load(dir.join("traffic.json")),
+                app: app.handle().clone(),
             });
+            // Конфиг для плитки и автозапуска — по настройкам, сохранённым до обновления.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move { sync_config(&handle).await });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -444,6 +530,11 @@ pub fn run() {
             check_update,
             install_update,
             get_traffic,
+            set_autostart,
+            open_vpn_settings,
+            add_tile,
+            take_link,
+            scan_qr,
             vpn_prepare,
             vpn_connect,
             vpn_disconnect,

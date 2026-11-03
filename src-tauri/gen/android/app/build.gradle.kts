@@ -86,6 +86,8 @@ rust {
 dependencies {
     // Ядро sing-box, собирается scripts/build-libbox.sh.
     implementation(files("libs/libbox.aar"))
+    // Сканер QR-кодов из Google Play services: свой экран камеры, без разрешения на камеру.
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.activity:activity-ktx:1.10.1")
