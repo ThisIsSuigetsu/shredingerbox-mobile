@@ -3,63 +3,76 @@ import { mascot, Mood } from "./mascot";
 
 declare const __APP_VERSION__: string;
 
-// Первый рабочий экран: один ключ и кнопка. Подписки, список серверов
-// и пинг придут следующими шагами MVP.
-
 type State = "stopped" | "starting" | "started" | "stopping";
 interface Status {
   state: State;
   error: string | null;
 }
-
-const KEY_STORAGE = "shredingerbox.key";
-
-function loadKey(): string {
-  try {
-    return localStorage.getItem(KEY_STORAGE) ?? "";
-  } catch {
-    return "";
-  }
+interface Server {
+  id: string;
+  name: string;
+  link: string;
+  subscription: string | null;
 }
-
-function saveKey(key: string) {
-  try {
-    localStorage.setItem(KEY_STORAGE, key);
-  } catch {
-    // Без хранилища ключ просто не запомнится до следующего запуска.
-  }
+interface Subscription {
+  url: string;
+  name: string;
+}
+interface Settings {
+  servers: Server[];
+  subscriptions: Subscription[];
+  selected: string | null;
 }
 
 const app = document.getElementById("app")!;
 app.innerHTML = `<main class="screen">
-  <div class="mascot" id="mascot"></div>
-  <h1 class="title">ShredingerBox</h1>
-  <p class="status" id="status">Выключено</p>
-  <textarea class="key" id="key" rows="3" spellcheck="false" autocomplete="off"
-    placeholder="Вставьте ключ vless://, hy2://, trojan:// или ss://"></textarea>
-  <button class="connect" id="connect">Подключить</button>
-  <p class="error" id="error" hidden></p>
-  <button class="link" id="log-toggle">Журнал</button>
-  <section class="log" id="log" hidden>
-    <div class="log-bar">
-      <button class="link" id="log-refresh">Обновить</button>
-      <button class="link" id="log-copy">Скопировать</button>
-    </div>
-    <pre id="log-text"></pre>
+  <section class="hero">
+    <div class="mascot" id="mascot"></div>
+    <p class="status" id="status">Выключено</p>
+    <p class="current" id="current"></p>
+    <button class="connect" id="connect">Подключить</button>
+    <p class="error" id="error" hidden></p>
   </section>
-  <span class="version">v${__APP_VERSION__}</span>
+
+  <section class="servers">
+    <div class="section-head">
+      <h2>Серверы</h2>
+      <button class="link" id="refresh" hidden>Обновить</button>
+      <button class="link" id="add-toggle">Добавить</button>
+    </div>
+    <div class="add" id="add" hidden>
+      <textarea class="key" id="add-text" rows="3" spellcheck="false" autocomplete="off"
+        placeholder="Ключ vless://, hy2://, trojan://, ss:// или ссылка на подписку https://…"></textarea>
+      <div class="add-actions">
+        <button class="link" id="add-cancel">Отмена</button>
+        <button class="primary" id="add-submit">Добавить</button>
+      </div>
+    </div>
+    <div id="groups"></div>
+  </section>
+
+  <section class="log-section">
+    <button class="link" id="log-toggle">Журнал</button>
+    <div class="log" id="log" hidden>
+      <div class="log-bar">
+        <button class="link" id="log-refresh">Обновить</button>
+        <button class="link" id="log-copy">Скопировать</button>
+      </div>
+      <pre id="log-text"></pre>
+    </div>
+  </section>
+  <span class="version">ShredingerBox v${__APP_VERSION__}</span>
 </main>`;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const keyInput = $<HTMLTextAreaElement>("key");
 const button = $<HTMLButtonElement>("connect");
-const statusText = $("status");
 const errorText = $("error");
+const addBox = $("add");
+const addText = $<HTMLTextAreaElement>("add-text");
+const addSubmit = $<HTMLButtonElement>("add-submit");
 
-keyInput.value = loadKey();
-
+let settings: Settings = { servers: [], subscriptions: [], selected: null };
 let state: State = "stopped";
-let serverName = "";
 // Пока ждём ответа на нажатие, опрос статуса не должен перерисовывать кнопку.
 let busy = false;
 
@@ -71,19 +84,31 @@ const LABEL: Record<State, string> = {
   stopping: "Отключаемся…",
 };
 
-function showError(message: string | null) {
-  errorText.hidden = !message;
-  errorText.textContent = message ?? "";
+function esc(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
-function render() {
-  $("mascot").innerHTML = mascot(140, MOOD[state]);
-  statusText.textContent = state === "started" && serverName ? `Подключено · ${serverName}` : LABEL[state];
-  statusText.classList.toggle("on", state === "started");
+function showError(message: unknown) {
+  const text = message ? String(message) : "";
+  errorText.hidden = !text;
+  errorText.textContent = text;
+}
+
+function selectedServer(): Server | undefined {
+  return settings.servers.find((s) => s.id === settings.selected) ?? settings.servers[0];
+}
+
+// ---------- главный блок ----------
+
+function renderHero() {
+  $("mascot").innerHTML = mascot(120, MOOD[state]);
+  const status = $("status");
+  status.textContent = LABEL[state];
+  status.classList.toggle("on", state === "started");
+  $("current").textContent = selectedServer()?.name ?? "Нет серверов";
   button.textContent = state === "stopped" ? "Подключить" : "Отключить";
   button.classList.toggle("on", state !== "stopped");
-  button.disabled = busy || state === "stopping";
-  keyInput.disabled = state !== "stopped";
+  button.disabled = busy || state === "stopping" || (state === "stopped" && !settings.servers.length);
 }
 
 async function poll() {
@@ -92,36 +117,173 @@ async function poll() {
     if (s.state !== state && !busy) {
       state = s.state;
       if (state === "stopped" && s.error) showError(s.error);
-      render();
+      renderHero();
     }
   } catch (e) {
-    showError(String(e));
+    showError(e);
   }
 }
 
-button.addEventListener("click", async () => {
+/** Общая обёртка для действий: блокирует кнопки, показывает ошибку. */
+async function act(fn: () => Promise<void>) {
   busy = true;
   showError(null);
-  render();
+  renderHero();
   try {
+    await fn();
+  } catch (e) {
+    showError(e);
+  } finally {
+    busy = false;
+    renderHero();
+  }
+}
+
+button.addEventListener("click", () =>
+  act(async () => {
     if (state === "stopped") {
-      const key = keyInput.value.trim();
-      if (!key) throw "Сначала вставьте ключ";
       if (!(await invoke<boolean>("vpn_prepare"))) throw "Без разрешения на VPN подключиться нельзя";
-      saveKey(key);
-      serverName = await invoke<string>("vpn_connect", { link: key });
+      await invoke("vpn_connect");
       state = "starting";
     } else {
       await invoke("vpn_disconnect");
       state = "stopping";
     }
-  } catch (e) {
-    showError(String(e));
-  } finally {
-    busy = false;
+  }),
+);
+
+// ---------- серверы ----------
+
+/** Кнопка удаления срабатывает со второго нажатия, чтобы не удалить случайно. */
+const armed = new Set<string>();
+
+function deleteButton(key: string, title: string): string {
+  const on = armed.has(key);
+  return `<button class="delete${on ? " armed" : ""}" data-delete="${esc(key)}" aria-label="${esc(title)}">${
+    on ? "Удалить?" : "✕"
+  }</button>`;
+}
+
+function serverRow(s: Server, removable: boolean): string {
+  const selected = s.id === selectedServer()?.id;
+  return `<div class="server${selected ? " selected" : ""}">
+    <button class="server-pick" data-select="${esc(s.id)}">
+      <span class="dot"></span><span class="server-name">${esc(s.name)}</span>
+    </button>
+    ${removable ? deleteButton(`server:${s.id}`, `Удалить ${s.name}`) : ""}
+  </div>`;
+}
+
+function renderServers() {
+  const groups: string[] = [];
+  for (const sub of settings.subscriptions) {
+    const list = settings.servers.filter((s) => s.subscription === sub.url);
+    groups.push(`<div class="group">
+      <div class="group-head">
+        <span class="group-name">${esc(sub.name)}</span>
+        <span class="group-count">${list.length}</span>
+        ${deleteButton(`sub:${sub.url}`, `Удалить подписку ${sub.name}`)}
+      </div>
+      ${list.map((s) => serverRow(s, false)).join("")}
+    </div>`);
+  }
+  const keys = settings.servers.filter((s) => !s.subscription);
+  if (keys.length) {
+    groups.push(`<div class="group">
+      <div class="group-head"><span class="group-name">Ключи</span><span class="group-count">${keys.length}</span></div>
+      ${keys.map((s) => serverRow(s, true)).join("")}
+    </div>`);
+  }
+  $("groups").innerHTML = groups.length
+    ? groups.join("")
+    : `<p class="empty">Добавьте ключ или ссылку на подписку — их присылает тот, кто дал вам VPN.</p>`;
+  $("refresh").hidden = !settings.subscriptions.length;
+  if (!settings.servers.length) addBox.hidden = false;
+}
+
+function render() {
+  renderHero();
+  renderServers();
+}
+
+$("groups").addEventListener("click", (e) => {
+  const target = e.target as HTMLElement;
+  const del = target.closest<HTMLElement>("[data-delete]");
+  if (del) {
+    const key = del.dataset.delete!;
+    if (!armed.has(key)) {
+      armed.add(key);
+      setTimeout(() => {
+        armed.delete(key);
+        renderServers();
+      }, 3000);
+      renderServers();
+      return;
+    }
+    armed.delete(key);
+    const [kind, value] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
+    act(async () => {
+      settings = kind === "sub"
+        ? await invoke<Settings>("remove_subscription", { url: value })
+        : await invoke<Settings>("remove_server", { id: value });
+      render();
+    });
+    return;
+  }
+  const pick = target.closest<HTMLElement>("[data-select]");
+  if (pick && pick.dataset.select !== selectedServer()?.id) {
+    const id = pick.dataset.select!;
+    // Сразу отмечаем выбор, не дожидаясь переподключения.
+    settings.selected = id;
     render();
+    act(async () => {
+      settings = await invoke<Settings>("select_server", { id });
+      render();
+    });
   }
 });
+
+$("add-toggle").addEventListener("click", () => {
+  addBox.hidden = !addBox.hidden;
+  if (!addBox.hidden) addText.focus();
+});
+$("add-cancel").addEventListener("click", () => {
+  addText.value = "";
+  if (settings.servers.length) addBox.hidden = true;
+});
+addSubmit.addEventListener("click", () =>
+  act(async () => {
+    const text = addText.value.trim();
+    if (!text) throw "Вставьте ключ или ссылку на подписку";
+    addSubmit.disabled = true;
+    addSubmit.textContent = "Добавляем…";
+    try {
+      settings = await invoke<Settings>("add_from_text", { text });
+    } finally {
+      addSubmit.disabled = false;
+      addSubmit.textContent = "Добавить";
+    }
+    addText.value = "";
+    addBox.hidden = true;
+    render();
+  }),
+);
+$("refresh").addEventListener("click", () =>
+  act(async () => {
+    const refresh = $<HTMLButtonElement>("refresh");
+    refresh.textContent = "Обновляем…";
+    try {
+      settings = await invoke<Settings>("refresh_subscriptions");
+    } catch (e) {
+      // Часть подписок могла обновиться — перечитываем то, что сохранилось.
+      settings = await invoke<Settings>("get_settings");
+      throw e;
+    } finally {
+      refresh.textContent = "Обновить";
+      render();
+    }
+  }),
+);
 
 // ---------- журнал ядра ----------
 
@@ -141,17 +303,51 @@ $("log-toggle").addEventListener("click", () => {
   logBox.hidden = !logBox.hidden;
   if (!logBox.hidden) loadLog();
 });
-$("log-refresh").addEventListener("click", loadLog);$("log-copy").addEventListener("click", async () => {
-  const button = $("log-copy");
+$("log-refresh").addEventListener("click", loadLog);
+$("log-copy").addEventListener("click", async () => {
+  const copy = $("log-copy");
   try {
     await navigator.clipboard.writeText(logText.textContent ?? "");
-    button.textContent = "Скопировано";
+    copy.textContent = "Скопировано";
   } catch {
-    button.textContent = "Не удалось";
+    copy.textContent = "Не удалось";
   }
-  setTimeout(() => (button.textContent = "Скопировать"), 1500);
+  setTimeout(() => (copy.textContent = "Скопировать"), 1500);
 });
 
-render();
-poll();
-setInterval(poll, 1000);
+// ---------- запуск ----------
+
+/** Первая версия хранила один ключ в localStorage — переносим его в настройки. */
+async function migrateOldKey() {
+  let key = "";
+  try {
+    key = localStorage.getItem("shredingerbox.key") ?? "";
+  } catch {
+    return;
+  }
+  if (!key) return;
+  if (!settings.servers.length) {
+    try {
+      settings = await invoke<Settings>("add_from_text", { text: key });
+    } catch {
+      // Битый ключ просто не переносим.
+    }
+  }
+  try {
+    localStorage.removeItem("shredingerbox.key");
+  } catch {
+    // ignore
+  }
+}
+
+(async () => {
+  try {
+    settings = await invoke<Settings>("get_settings");
+    await migrateOldKey();
+  } catch (e) {
+    showError(e);
+  }
+  render();
+  poll();
+  setInterval(poll, 1000);
+})();
