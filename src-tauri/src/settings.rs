@@ -90,6 +90,8 @@ pub struct Settings {
     /// Подключаться после включения телефона.
     pub autostart: bool,
     pub rules: Rules,
+    /// "ru" или "en"; None - ещё не выбран, интерфейс возьмёт язык системы.
+    pub language: Option<String>,
 }
 
 pub fn new_id() -> String {
@@ -153,7 +155,7 @@ impl Settings {
             }
         }
         if added == 0 {
-            return Err(first_err.unwrap_or_else(|| "Вставьте ключ или ссылку на подписку".into()));
+            return Err(first_err.unwrap_or_else(|| crate::tr!("Вставьте ключ или ссылку на подписку", "Paste a key or a subscription link")));
         }
         Ok(added)
     }

@@ -51,10 +51,10 @@ class BoxTileService : TileService() {
     }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       tile.subtitle = when (state) {
-        VpnState.State.STARTED -> "Подключено"
-        VpnState.State.STARTING -> "Подключаемся…"
-        VpnState.State.STOPPING -> "Отключаемся…"
-        VpnState.State.STOPPED -> "Выключено"
+        VpnState.State.STARTED -> Lang.t(this, "Подключено", "Connected")
+        VpnState.State.STARTING -> Lang.t(this, "Подключаемся…", "Connecting…")
+        VpnState.State.STOPPING -> Lang.t(this, "Отключаемся…", "Disconnecting…")
+        VpnState.State.STOPPED -> Lang.t(this, "Выключено", "Off")
       }
     }
     tile.updateTile()

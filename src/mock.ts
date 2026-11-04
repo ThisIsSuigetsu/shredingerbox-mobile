@@ -14,6 +14,7 @@ const settings = {
   selected: "a1" as string | null,
   mode: "tun",
   autostart: false,
+  language: null as string | null,
   rules: {
     final_route: "direct",
     proxy_apps: [{ name: "Telegram", package: "org.telegram.messenger" }],
@@ -83,6 +84,9 @@ mockIPC((cmd, args) => {
       return linkOnce ? null : ((linkOnce = true), "https://panel.example.org/sub/abc");
     case "scan_qr":
       return "hy2://pass@hy.example.org:443#%F0%9F%87%A9%F0%9F%87%AA%20QR";
+    case "set_language":
+      settings.language = a.lang;
+      return copy();
     case "set_mode":
       settings.mode = a.mode;
       return copy();

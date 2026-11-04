@@ -45,5 +45,5 @@ pub async fn call<R: Runtime, T: DeserializeOwned>(
     _command: &str,
     _payload: impl Serialize,
 ) -> Result<T, String> {
-    Err("VPN пока работает только на Android".into())
+    Err(crate::tr!("VPN пока работает только на Android", "VPN works only on Android for now"))
 }

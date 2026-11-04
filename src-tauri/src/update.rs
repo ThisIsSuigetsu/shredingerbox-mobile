@@ -34,11 +34,22 @@ fn parse_version(s: &str) -> Option<(u64, u64, u64)> {
     Some((parts.next()??, parts.next().flatten().unwrap_or(0), parts.next().flatten().unwrap_or(0)))
 }
 
-/// Описание релиза без инструкции для первой установки (её пишет release.yml):
-/// тому, кто обновляется, она не нужна. Строки пунктов в CHANGELOG.md перенесены
-/// по ширине - склеиваем их, чтобы в окне обновления текст переносился сам.
-fn notes(body: &str) -> String {
-    let changes = body.split("**Первая установка**").next().unwrap_or_default();
+/// Начало английской половины описания релиза (её пишет release.yml).
+const ENGLISH: &str = "## English";
+
+/// Описание релиза на нужном языке без инструкции для первой установки: тому, кто
+/// обновляется, она не нужна. В старых релизах английской половины нет - тогда русская.
+/// Строки пунктов в CHANGELOG перенесены по ширине - склеиваем их, чтобы в окне
+/// обновления текст переносился сам.
+fn notes(body: &str, en: bool) -> String {
+    let changes = match body.split_once(ENGLISH) {
+        Some((_, english)) if en => english.split("**First install**").next().unwrap_or_default(),
+        _ => {
+            let russian = body.split(ENGLISH).next().unwrap_or_default();
+            russian.split("**Первая установка**").next().unwrap_or_default()
+        }
+    };
+    let changes = changes.trim().trim_end_matches("---");
     let mut out: Vec<String> = vec![];
     for line in changes.trim().lines() {
         match out.last_mut() {
@@ -53,15 +64,15 @@ fn notes(body: &str) -> String {
 }
 
 /// Последний релиз на GitHub, если он новее `current` и в нём есть APK.
-pub async fn check(current: &str) -> Result<Option<UpdateInfo>, String> {
+pub async fn check(current: &str, en: bool) -> Result<Option<UpdateInfo>, String> {
     let text = client(Duration::from_secs(15))?
         .get(LATEST)
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
-        .map_err(|e| format!("Не удалось проверить обновления: {e}"))?
+        .map_err(|e| crate::tr!("Не удалось проверить обновления: {e}", "Could not check for updates: {e}"))?
         .error_for_status()
-        .map_err(|e| format!("GitHub ответил ошибкой: {e}"))?
+        .map_err(|e| crate::tr!("GitHub ответил ошибкой: {e}", "GitHub returned an error: {e}"))?
         .text()
         .await
         .map_err(|e| e.to_string())?;
@@ -82,7 +93,7 @@ pub async fn check(current: &str) -> Result<Option<UpdateInfo>, String> {
     Ok(Some(UpdateInfo {
         version: tag.trim_start_matches('v').to_string(),
         current: current.to_string(),
-        notes: release["body"].as_str().map(notes).filter(|s| !s.is_empty()),
+        notes: release["body"].as_str().map(|b| notes(b, en)).filter(|s| !s.is_empty()),
         url: apk["browser_download_url"].as_str().unwrap_or_default().to_string(),
         size: apk["size"].as_u64().unwrap_or(0),
     }))
@@ -93,12 +104,12 @@ pub async fn download(url: &str, to: &Path) -> Result<(), String> {
         .get(url)
         .send()
         .await
-        .map_err(|e| format!("Обновление не скачалось: {e}"))?
+        .map_err(|e| crate::tr!("Обновление не скачалось: {e}", "The update did not download: {e}"))?
         .error_for_status()
-        .map_err(|e| format!("Обновление не скачалось: {e}"))?
+        .map_err(|e| crate::tr!("Обновление не скачалось: {e}", "The update did not download: {e}"))?
         .bytes()
         .await
-        .map_err(|e| format!("Обновление не скачалось: {e}"))?;
+        .map_err(|e| crate::tr!("Обновление не скачалось: {e}", "The update did not download: {e}"))?;
     if let Some(dir) = to.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
@@ -120,11 +131,14 @@ mod tests {
 
     #[test]
     fn notes_without_install_guide() {
-        assert_eq!(notes("Что нового.\n\n**Первая установка**\n1. Скачайте"), "Что нового.");
-        assert_eq!(notes("  Только текст  "), "Только текст");
+        assert_eq!(notes("Что нового.\n\n**Первая установка**\n1. Скачайте", false), "Что нового.");
+        assert_eq!(notes("  Только текст  ", true), "Только текст");
         assert_eq!(
-            notes("- Первый пункт,\n  его продолжение.\n- Второй.\n\nАбзац"),
+            notes("- Первый пункт,\n  его продолжение.\n- Второй.\n\nАбзац", false),
             "- Первый пункт, его продолжение.\n- Второй.\n\nАбзац"
         );
+        let both = "- Новое.\n\n**Первая установка**\n1. Скачайте\n\n---\n\n## English\n\n- New.\n\n**First install**\n1. Download";
+        assert_eq!(notes(both, false), "- Новое.");
+        assert_eq!(notes(both, true), "- New.");
     }
 }

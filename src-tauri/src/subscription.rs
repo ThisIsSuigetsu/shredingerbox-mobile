@@ -21,9 +21,9 @@ pub async fn fetch(url: &str) -> Result<Fetched, String> {
         .get(url)
         .send()
         .await
-        .map_err(|e| format!("Подписка не загрузилась: {e}"))?
+        .map_err(|e| crate::tr!("Подписка не загрузилась: {e}", "The subscription did not load: {e}"))?
         .error_for_status()
-        .map_err(|e| format!("Сервер подписки ответил ошибкой: {e}"))?;
+        .map_err(|e| crate::tr!("Сервер подписки ответил ошибкой: {e}", "The subscription server returned an error: {e}"))?;
     let title = resp
         .headers()
         .get("profile-title")
@@ -32,7 +32,7 @@ pub async fn fetch(url: &str) -> Result<Fetched, String> {
     let body = resp.text().await.map_err(|e| e.to_string())?;
     let links = links::parse_subscription_body(&body);
     if links.is_empty() {
-        return Err("В подписке не нашлось ни одного поддерживаемого сервера".into());
+        return Err(crate::tr!("В подписке не нашлось ни одного поддерживаемого сервера", "The subscription has no supported servers"));
     }
     let name = title.unwrap_or_else(|| host_of(url));
     Ok(Fetched { name, links })
@@ -53,7 +53,7 @@ fn host_of(url: &str) -> String {
     url::Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(str::to_string))
-        .unwrap_or_else(|| "Подписка".into())
+        .unwrap_or_else(|| crate::tr!("Подписка", "Subscription"))
 }
 
 #[cfg(test)]

@@ -178,12 +178,15 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     if (intent?.action != ACTION_START && intent?.action != SERVICE_INTERFACE) return START_NOT_STICKY
     if (running) return START_NOT_STICKY
     if (!prepareSaved(this)) {
-      VpnState.set(VpnState.State.STOPPED, "Нет сохранённого конфига - откройте приложение и подключитесь")
+      VpnState.set(
+        VpnState.State.STOPPED,
+        Lang.t(this, "Нет сохранённого конфига - откройте приложение и подключитесь", "No saved config - open the app and connect"),
+      )
       stopSelf()
       return START_NOT_STICKY
     }
     running = true
-    showNotification("Подключаемся…")
+    showNotification(Lang.t(this, "Подключаемся…", "Connecting…"))
     worker.execute { startCore() }
     return START_NOT_STICKY
   }
@@ -206,7 +209,10 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
       this.server = server
       server.startOrReloadService(configFile(this).readText(), OverrideOptions())
       VpnState.set(VpnState.State.STARTED)
-      showNotification(if (proxyPort > 0) "Прокси работает на 127.0.0.1:$proxyPort" else "Подключено")
+      showNotification(
+        if (proxyPort > 0) Lang.t(this, "Прокси работает на 127.0.0.1:$proxyPort", "Proxy is running on 127.0.0.1:$proxyPort")
+        else Lang.t(this, "Подключено", "Connected"),
+      )
     } catch (e: Exception) {
       Log.e(TAG, "не удалось запустить ядро", e)
       appendLog("ERROR не удалось запустить ядро: $e")
@@ -239,7 +245,7 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     }
   }
 
-  override fun onRevoke() = stopVpn("VPN отключён системой или другим приложением")
+  override fun onRevoke() = stopVpn(Lang.t(this, "VPN отключён системой или другим приложением", "VPN was turned off by the system or another app"))
 
   override fun onDestroy() {
     if (VpnState.state != VpnState.State.STOPPED) worker.execute { shutdown(null) }
@@ -271,7 +277,7 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
       .setContentTitle("ShredingerBox")
       .setContentText(text)
       .setContentIntent(open)
-      .addAction(0, "Отключить", stop)
+      .addAction(0, Lang.t(this, "Отключить", "Disconnect"), stop)
       .setOngoing(true)
       .setOnlyAlertOnce(true)
       .setShowWhen(false)
@@ -289,7 +295,7 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
   // ---------- TUN ----------
 
   override fun openTun(options: TunOptions): Int {
-    if (prepare(this) != null) error("нет разрешения на VPN")
+    if (prepare(this) != null) error(Lang.t(this, "нет разрешения на VPN", "no VPN permission"))
     val builder = Builder().setSession("ShredingerBox").setMtu(options.mtu)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setMetered(false)
 
@@ -321,7 +327,7 @@ class BoxVpnService : VpnService(), PlatformInterface, CommandServerHandler {
       }
     }
 
-    val pfd = builder.establish() ?: error("Android не дал создать VPN-интерфейс")
+    val pfd = builder.establish() ?: error(Lang.t(this, "Android не дал создать VPN-интерфейс", "Android did not allow creating the VPN interface"))
     tun = pfd
     return pfd.fd
   }

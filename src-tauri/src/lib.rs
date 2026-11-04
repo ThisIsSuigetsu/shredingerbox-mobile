@@ -1,5 +1,6 @@
 mod config;
-// Копия links.rs десктопа без изменений - часть функций здесь не нужна.
+mod i18n;
+// Копия links.rs десктопа (сообщения переведены) - часть функций здесь не нужна.
 #[allow(dead_code)]
 mod links;
 mod presets;
@@ -61,7 +62,7 @@ fn new_api() -> Result<config::Api, String> {
     use rand::Rng;
     let port = std::net::TcpListener::bind("127.0.0.1:0")
         .and_then(|l| l.local_addr())
-        .map_err(|e| format!("Не удалось выбрать порт для ядра: {e}"))?
+        .map_err(|e| tr!("Не удалось выбрать порт для ядра: {e}", "Could not pick a port for the core: {e}"))?
         .port();
     let secret = rand::thread_rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect();
     Ok(config::Api { port, secret })
@@ -69,14 +70,15 @@ fn new_api() -> Result<config::Api, String> {
 
 /// Конфиг со всеми серверами: выбранный - по умолчанию в селекторе.
 fn build_config(s: &Settings, api: &config::Api) -> Result<Value, String> {
-    let selected = s.selected_server().ok_or("Добавьте ключ или подписку")?;
+    let selected = s.selected_server().ok_or_else(|| tr!("Добавьте ключ или подписку", "Add a key or a subscription"))?;
     let servers: Vec<(String, Value)> = s
         .servers
         .iter()
         .filter_map(|srv| links::parse(&srv.link).ok().map(|p| (server_tag(&srv.id), p.outbound)))
         .collect();
     if !servers.iter().any(|(tag, _)| *tag == server_tag(&selected.id)) {
-        return Err(format!("Не удалось разобрать ключ сервера «{}»", selected.name));
+        let name = &selected.name;
+        return Err(tr!("Не удалось разобрать ключ сервера «{name}»", "Could not read the key of server \"{name}\""));
     }
     Ok(config::build(s.mode, &s.rules, &servers, &server_tag(&selected.id), api))
 }
@@ -184,7 +186,7 @@ fn remove_subscription(state: State<AppState>, url: String) -> Result<Settings, 
 async fn select_server(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<Settings, String> {
     let mut s = state.snapshot();
     if !s.servers.iter().any(|srv| srv.id == id) {
-        return Err("Сервер не найден".into());
+        return Err(tr!("Сервер не найден", "Server not found"));
     }
     s.selected = Some(id.clone());
     state.store(s.clone())?;
@@ -320,6 +322,21 @@ async fn set_mode(app: AppHandle, state: State<'_, AppState>, mode: Mode) -> Res
     Ok(s)
 }
 
+/// Язык интерфейса: запоминаем, переводим сообщения Rust и отдаём Android-части
+/// (уведомление, плитка), которая работает и без открытого приложения.
+#[tauri::command]
+async fn set_language(app: AppHandle, state: State<'_, AppState>, lang: String) -> Result<Settings, String> {
+    let lang = if lang == "en" { "en" } else { "ru" }.to_string();
+    i18n::set(&lang);
+    let _: Value = vpn::call(&app, "setLanguage", json!({ "lang": lang })).await?;
+    let mut s = state.snapshot();
+    if s.language.as_deref() != Some(lang.as_str()) {
+        s.language = Some(lang);
+        state.store(s.clone())?;
+    }
+    Ok(s)
+}
+
 // ---------- запуск без приложения, ссылки, QR ----------
 
 #[tauri::command]
@@ -372,7 +389,7 @@ async fn scan_qr(app: AppHandle) -> Result<Option<String>, String> {
 
 #[tauri::command]
 async fn check_update(app: AppHandle) -> Result<Option<update::UpdateInfo>, String> {
-    update::check(&app.package_info().version.to_string()).await
+    update::check(&app.package_info().version.to_string(), i18n::en()).await
 }
 
 /// Скачать APK и открыть установщик. Приложение перезапустится уже новой версией.
@@ -416,7 +433,7 @@ async fn restart(app: &AppHandle, state: &AppState, s: &Settings) -> Result<(), 
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    Err("VPN не остановился за 5 секунд".into())
+    Err(tr!("VPN не остановился за 5 секунд", "VPN did not stop within 5 seconds"))
 }
 
 #[tauri::command]
@@ -502,8 +519,12 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let path = dir.join("settings.json");
+            let settings = Settings::load(&path);
+            if let Some(lang) = &settings.language {
+                i18n::set(lang);
+            }
             app.manage(AppState {
-                settings: Mutex::new(Settings::load(&path)),
+                settings: Mutex::new(settings),
                 path,
                 api: Mutex::new(None),
                 traffic: traffic::Traffic::load(dir.join("traffic.json")),
@@ -527,6 +548,7 @@ pub fn run() {
             set_rules,
             list_apps,
             set_mode,
+            set_language,
             check_update,
             install_update,
             get_traffic,

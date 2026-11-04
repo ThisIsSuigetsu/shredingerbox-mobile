@@ -8,6 +8,7 @@ import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.provider.Settings
+import android.service.quicksettings.TileService
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -47,6 +48,11 @@ class InstallArgs {
 }
 
 @InvokeArg
+class LangArgs {
+  lateinit var lang: String
+}
+
+@InvokeArg
 class FlagArgs {
   var on: Boolean = false
 }
@@ -78,6 +84,21 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   override fun onNewIntent(intent: Intent) = remember(intent)
+
+  private fun t(ru: String, en: String) = Lang.t(activity, ru, en)
+
+  /** Язык из настроек приложения - для уведомления, плитки и ошибок. */
+  @Command
+  fun setLanguage(invoke: Invoke) {
+    Lang.set(activity, invoke.parseArgs(LangArgs::class.java).lang)
+    // Плитка перерисуется с новой подписью. Состояние VPN здесь не трогаем: оно в процессе «:vpn».
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+      runCatching {
+        TileService.requestListeningState(activity, ComponentName(activity, BoxTileService::class.java))
+      }
+    }
+    invoke.resolve()
+  }
 
   private fun remember(intent: Intent?) {
     val uri = intent?.data ?: return
@@ -115,7 +136,7 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
       activity.startActivity(Intent(Settings.ACTION_VPN_SETTINGS))
       invoke.resolve()
     } catch (e: Exception) {
-      invoke.reject("Не удалось открыть настройки VPN: ${e.message}")
+      invoke.reject(t("Не удалось открыть настройки VPN", "Could not open VPN settings") + ": ${e.message}")
     }
   }
 
@@ -154,8 +175,12 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
           } else {
             modules.installModules(ModuleInstallRequest.newBuilder().addApi(scanner).build())
             invoke.reject(
-              "Сканер QR-кодов ещё скачивается через Google Play. Подождите минуту и попробуйте снова. " +
-                "Если не скачивается, включите VPN и повторите.",
+              t(
+                "Сканер QR-кодов ещё скачивается через Google Play. Подождите минуту и попробуйте снова. " +
+                  "Если не скачивается, включите VPN и повторите.",
+                "The QR scanner is still downloading from Google Play. Wait a minute and try again. " +
+                  "If it does not download, turn on the VPN and retry.",
+              ),
             )
           }
         }
@@ -178,7 +203,12 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
 
   private fun scannerUnavailable(invoke: Invoke, e: Throwable) {
     Log.e("ShredingerBox", "сканер QR-кодов", e)
-    invoke.reject("Сканер QR-кодов недоступен - нужны сервисы Google Play. Ключ можно вставить вручную.")
+    invoke.reject(
+      t(
+        "Сканер QR-кодов недоступен - нужны сервисы Google Play. Ключ можно вставить вручную.",
+        "The QR scanner is unavailable - it needs Google Play services. You can paste the key manually.",
+      ),
+    )
   }
   /** Разрешение на VPN: системное окно появляется, только если его ещё не давали. */
   @Command
@@ -258,7 +288,7 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
         }
         invoke.resolve(JSObject().put("apps", apps))
       } catch (e: Exception) {
-        invoke.reject("Не удалось получить список приложений: ${e.message}")
+        invoke.reject(t("Не удалось получить список приложений", "Could not get the app list") + ": ${e.message}")
       }
     }.start()
   }
@@ -278,7 +308,7 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
       activity.startActivity(intent)
       invoke.resolve()
     } catch (e: Exception) {
-      invoke.reject("Не удалось открыть установщик: ${e.message}")
+      invoke.reject(t("Не удалось открыть установщик", "Could not open the installer") + ": ${e.message}")
     }
   }
 

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { mascot, Mood } from "./mascot";
 import { changesOf, notesHtml } from "./changelog";
+import { L, Lang, lang, locale, setLang, systemLang } from "./i18n";
 
 declare const __APP_VERSION__: string;
 
@@ -44,6 +45,7 @@ interface Settings {
   mode: Mode;
   autostart: boolean;
   rules: Rules;
+  language: Lang | null;
 }
 interface UpdateInfo {
   version: string;
@@ -112,6 +114,7 @@ const st = {
     selected: null,
     mode: "tun",
     autostart: false,
+    language: null,
     rules: { final_route: "direct", proxy_apps: [], direct_apps: [], proxy_domains: [], direct_domains: [], presets: [] },
   } as Settings,
   state: "stopped" as State,
@@ -134,12 +137,13 @@ const st = {
   usage: { month: "", servers: {}, speed: { up: 0, down: 0 } } as MonthTraffic,
 };
 
-const LIST_TITLE: Record<AppList | SiteList, string> = {
-  proxy_apps: "Приложения через VPN",
-  direct_apps: "Приложения напрямую",
-  proxy_domains: "Сайты через VPN",
-  direct_domains: "Сайты напрямую",
-};
+const listTitle = (list: AppList | SiteList): string =>
+  ({
+    proxy_apps: L("Приложения через VPN", "Apps via VPN"),
+    direct_apps: L("Приложения напрямую", "Direct apps"),
+    proxy_domains: L("Сайты через VPN", "Sites via VPN"),
+    direct_domains: L("Сайты напрямую", "Direct sites"),
+  })[list];
 
 const root = document.getElementById("app")!;
 
@@ -173,21 +177,23 @@ function splitFlag(name: string): { code: string; name: string } {
   return { code: (letters.slice(0, 2) || "??").toUpperCase(), name };
 }
 
-const num = (x: number) => x.toLocaleString("ru-RU", { maximumFractionDigits: 1 });
+const num = (x: number) => x.toLocaleString(locale(), { maximumFractionDigits: 1 });
 
 function bytes(n: number): string {
-  if (n >= 1024 ** 3) return `${num(n / 1024 ** 3)} ГБ`;
-  if (n >= 1024 ** 2) return `${num(n / 1024 ** 2)} МБ`;
-  return `${num(n / 1024)} КБ`;
+  if (n >= 1024 ** 3) return `${num(n / 1024 ** 3)} ${L("ГБ", "GB")}`;
+  if (n >= 1024 ** 2) return `${num(n / 1024 ** 2)} ${L("МБ", "MB")}`;
+  return `${num(n / 1024)} ${L("КБ", "KB")}`;
 }
 
 function speed(n: number): string {
-  return n >= 1024 * 1024 ? `${num(n / 1024 / 1024)} МБ/с` : `${num(n / 1024)} КБ/с`;
+  return n >= 1024 * 1024 ? `${num(n / 1024 / 1024)} ${L("МБ/с", "MB/s")}` : `${num(n / 1024)} ${L("КБ/с", "KB/s")}`;
 }
 
-const MONTHS = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+const MONTHS_RU = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+const MONTHS_EN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 /** «2026-11» → «ноябрь» */
-const monthName = (month: string) => MONTHS[Number(month.slice(5, 7)) - 1] ?? "этот месяц";
+const monthName = (month: string) =>
+  (lang() === "en" ? MONTHS_EN : MONTHS_RU)[Number(month.slice(5, 7)) - 1] ?? L("этот месяц", "this month");
 
 /** Расход сервера за месяц, «1,2 ГБ». Пусто, если трафика не было. */
 function usageShort(id: string): string {
@@ -229,18 +235,18 @@ async function refreshUsage() {
 function monthText(): string {
   const srv = selectedServer();
   const short = srv ? usageShort(srv.id) : "";
-  return short ? `${short} за ${monthName(st.usage.month)}` : "";
+  return short ? `${short} ${L("за", "in")} ${monthName(st.usage.month)}` : "";
 }
 
 function pingView(id: string): string {
   const p = st.pings[id];
   if (!p) return "";
   if (p.udp) return `<span class="ping muted">UDP</span>`;
-  if (p.ms == null) return `<span class="ping bad">нет ответа</span>`;
+  if (p.ms == null) return `<span class="ping bad">${L("нет ответа", "no reply")}</span>`;
   // Через VPN задержка складывается из двух плеч - порог выше.
   const good = p.via_vpn ? 300 : 120;
   const cls = p.ms <= good ? "good" : p.ms <= good * 2.5 ? "slow" : "bad";
-  return `<span class="ping ${cls}">${p.ms} мс</span>`;
+  return `<span class="ping ${cls}">${p.ms} ${L("мс", "ms")}</span>`;
 }
 
 let toastTimer = 0;
@@ -301,21 +307,23 @@ function siteStats(list: SiteList, text: string): { add: string[]; dup: number }
 }
 
 function statsText(x: { add: string[]; dup: number }): string {
-  if (!x.add.length && !x.dup) return "Вставьте адреса сайтов - через пробел, запятую или с новой строки";
-  return `Будет добавлено: ${x.add.length}` + (x.dup ? ` · дубликатов пропущено: ${x.dup}` : "");
+  if (!x.add.length && !x.dup) {
+    return L("Вставьте адреса сайтов - через пробел, запятую или с новой строки", "Paste site addresses - separated by spaces, commas or new lines");
+  }
+  return `${L("Будет добавлено", "Will be added")}: ${x.add.length}` + (x.dup ? ` · ${L("дубликатов пропущено", "duplicates skipped")}: ${x.dup}` : "");
 }
 
 /** «ключ «Германия»», «3 ключа», «подписка с panel.example.org» - без самих секретов. */
 function clipSummary(text: string): string {
   if (/^https?:\/\//i.test(text)) {
     try {
-      return `ссылка на подписку с ${new URL(text).host}`;
+      return L(`ссылка на подписку с ${new URL(text).host}`, `a subscription link from ${new URL(text).host}`);
     } catch {
-      return "ссылка на подписку";
+      return L("ссылка на подписку", "a subscription link");
     }
   }
   const lines = text.split("\n").filter(Boolean);
-  if (lines.length > 1) return `ключи: ${lines.length}`;
+  if (lines.length > 1) return L(`ключи: ${lines.length}`, `${lines.length} keys`);
   const hash = lines[0].indexOf("#");
   let name = "";
   try {
@@ -323,7 +331,8 @@ function clipSummary(text: string): string {
   } catch {
     // Кривое имя - покажем без него.
   }
-  return name ? `ключ «${name}»` : `ключ ${lines[0].split("://")[0]}://…`;
+  const scheme = lines[0].split("://")[0];
+  return name ? L(`ключ «${name}»`, `the key "${name}"`) : L(`ключ ${scheme}://…`, `a ${scheme}:// key`);
 }
 
 /** Кнопка удаления срабатывает со второго нажатия, чтобы не удалить случайно. */
@@ -332,7 +341,7 @@ const armed = new Set<string>();
 function deleteButton(key: string, title: string): string {
   const on = armed.has(key);
   return `<button class="x-btn${on ? " armed" : ""}" data-action="delete" data-key="${esc(key)}" aria-label="${esc(title)}">${
-    on ? "Удалить?" : icon.x()
+    on ? L("Удалить?", "Delete?") : icon.x()
   }</button>`;
 }
 
@@ -361,7 +370,7 @@ function serverRow(x: Server, removable: boolean): string {
     <button class="server-pick" data-action="select" data-id="${esc(x.id)}" aria-pressed="${on}">
       <span class="flag">${esc(f.code)}</span><span class="name">${esc(f.name)}</span>${usageView(x.id)}${pingView(x.id)}
     </button>
-    ${removable ? deleteButton(`server:${x.id}`, `Удалить ${x.name}`) : ""}
+    ${removable ? deleteButton(`server:${x.id}`, `${L("Удалить", "Delete")} ${x.name}`) : ""}
   </div>`;
 }
 
@@ -370,19 +379,28 @@ function homeView(): string {
   const srv = selectedServer();
   const on = st.state === "started";
   const working = st.busy || st.state === "starting" || st.state === "stopping";
-  const title = st.state === "starting" ? "Подключаемся…" : st.state === "stopping" ? "Отключаемся…" : on ? "Подключено" : "Не подключено";
+  const title = st.state === "starting"
+    ? L("Подключаемся…", "Connecting…")
+    : st.state === "stopping"
+      ? L("Отключаемся…", "Disconnecting…")
+      : on
+        ? L("Подключено", "Connected")
+        : L("Не подключено", "Not connected");
   const flag = srv ? splitFlag(srv.name) : null;
   const sub = srv
     ? `<span class="flag">${esc(flag!.code)}</span><span class="cur-name">${esc(flag!.name)}</span>${st.pings[srv.id] ? pingView(srv.id) : ""}`
-    : "Добавьте сервер, чтобы подключиться";
+    : L("Добавьте сервер, чтобы подключиться", "Add a server to connect");
   const servers = s.servers.length
     ? s.servers.map((x) => serverRow(x, false)).join("")
-    : `<div class="empty">Серверов пока нет. Вставьте ключ <span class="mono">vless://</span>, <span class="mono">hy2://</span> или ссылку на подписку - их присылает тот, кто дал вам VPN.</div>`;
+    : `<div class="empty">${L(
+        `Серверов пока нет. Вставьте ключ <span class="mono">vless://</span>, <span class="mono">hy2://</span> или ссылку на подписку - их присылает тот, кто дал вам VPN.`,
+        `No servers yet. Paste a <span class="mono">vless://</span> or <span class="mono">hy2://</span> key or a subscription link - you get them from whoever gave you the VPN.`,
+      )}</div>`;
   const modeOpt = (m: Mode, t: string) =>
     `<button class="${s.mode === m ? "on" : ""}" data-action="set-mode" data-mode="${m}" aria-pressed="${s.mode === m}">${t}</button>`;
   return `<header class="brand">${mascot(40, mood())}<span>ShredingerBox</span></header>
     <section class="home-center">
-      <button class="power ${working ? "busy" : on ? "on" : ""}" data-action="toggle" aria-label="${st.state === "stopped" ? "Подключиться" : "Отключиться"}"
+      <button class="power ${working ? "busy" : on ? "on" : ""}" data-action="toggle" aria-label="${st.state === "stopped" ? L("Подключиться", "Connect") : L("Отключиться", "Disconnect")}"
         ${st.state === "stopping" || (st.state === "stopped" && !s.servers.length) ? "disabled" : ""}>
         <span class="inner">${icon.power(60)}</span>
       </button>
@@ -392,17 +410,20 @@ function homeView(): string {
       ${on ? speedsView() : ""}
     </section>
     <section class="card fold${st.folded.mode ? " folded" : ""}">
-      ${foldHead("mode", "Режим", s.mode === "tun" ? "TUN" : "Прокси")}
+      ${foldHead("mode", L("Режим", "Mode"), s.mode === "tun" ? "TUN" : L("Прокси", "Proxy"))}
       ${st.folded.mode ? "" : `
-      <div class="seg" role="group" aria-label="Режим">${modeOpt("tun", "TUN")}${modeOpt("proxy", "Прокси")}</div>
+      <div class="seg" role="group" aria-label="${L("Режим", "Mode")}">${modeOpt("tun", "TUN")}${modeOpt("proxy", L("Прокси", "Proxy"))}</div>
       ${s.mode === "tun"
-        ? `<p class="card-hint">VPN для всего телефона - по правилам.</p>`
-        : `<div class="hint">${icon.info}<span>Без VPN: через прокси <b class="mono">${PROXY}</b> ходят только приложения, где он указан, - например, Telegram → Данные и память → Прокси (SOCKS5 или HTTP), или настройки Wi-Fi. Остальные идут напрямую.</span></div>`}`}
+        ? `<p class="card-hint">${L("VPN для всего телефона - по правилам.", "VPN for the whole phone, following the rules.")}</p>`
+        : `<div class="hint">${icon.info}<span>${L(
+          `Без VPN: через прокси <b class="mono">${PROXY}</b> ходят только приложения, где он указан, - например, Telegram → Данные и память → Прокси (SOCKS5 или HTTP), или настройки Wi-Fi. Остальные идут напрямую.`,
+          `No VPN: only apps where the proxy <b class="mono">${PROXY}</b> is set use it - for example Telegram → Data and Storage → Proxy (SOCKS5 or HTTP), or Wi-Fi settings. Everything else goes direct.`,
+        )}</span></div>`}`}
     </section>
     <section class="card">
-      <div class="card-head"><h2>Серверы</h2>${s.servers.length ? `<button class="link-btn" data-action="ping" ${st.pinging ? "disabled" : ""}>${st.pinging ? "Меряем…" : "Проверить пинг"}</button>` : ""}</div>
+      <div class="card-head"><h2>${L("Серверы", "Servers")}</h2>${s.servers.length ? `<button class="link-btn" data-action="ping" ${st.pinging ? "disabled" : ""}>${st.pinging ? L("Меряем…", "Measuring…") : L("Проверить пинг", "Check ping")}</button>` : ""}</div>
       <div class="server-list">${servers}</div>
-      <button class="dashed" data-action="open-add-server">${icon.plus}Добавить подписку или ключ</button>
+      <button class="dashed" data-action="open-add-server">${icon.plus}${L("Добавить подписку или ключ", "Add a subscription or key")}</button>
     </section>`;
 }
 
@@ -424,26 +445,28 @@ function serversView(): string {
           <span class="muted mono">${esc(host(sub.url))}</span>
         </div>
         <div class="row">
-          <button class="x-btn" data-action="refresh-subs" aria-label="Обновить подписки">${icon.refresh}</button>
-          ${deleteButton(`sub:${sub.url}`, `Удалить подписку ${sub.name}`)}
+          <button class="x-btn" data-action="refresh-subs" aria-label="${L("Обновить подписки", "Refresh subscriptions")}">${icon.refresh}</button>
+          ${deleteButton(`sub:${sub.url}`, `${L("Удалить подписку", "Delete subscription")} ${sub.name}`)}
         </div>
       </div>
-      <div class="server-list">${list.map((x) => serverRow(x, false)).join("") || `<div class="empty">В подписке нет серверов</div>`}</div>
+      <div class="server-list">${list.map((x) => serverRow(x, false)).join("") || `<div class="empty">${L("В подписке нет серверов", "The subscription has no servers")}</div>`}</div>
     </section>`;
   }).join("");
   const manual = s.servers.filter((x) => !x.subscription);
   const manualCard = manual.length
-    ? `<section class="card"><div class="card-head"><h2>Добавленные вручную <span class="count">· ${manual.length}</span></h2></div>
+    ? `<section class="card"><div class="card-head"><h2>${L("Добавленные вручную", "Added manually")} <span class="count">· ${manual.length}</span></h2></div>
         <div class="server-list">${manual.map((x) => serverRow(x, true)).join("")}</div></section>`
     : "";
-  const empty = !s.servers.length ? `<section class="card"><div class="empty">Серверов пока нет. Вставьте ключ или ссылку на подписку.</div></section>` : "";
+  const empty = !s.servers.length ? `<section class="card"><div class="empty">${L("Серверов пока нет. Вставьте ключ или ссылку на подписку.", "No servers yet. Paste a key or a subscription link.")}</div></section>` : "";
   return `<div class="page-head">
-      <h1>Серверы</h1>
-      <p>Пока VPN включён, пинг меряется через туннель, а переключение мгновенное.
-        Рядом с сервером - расход трафика за ${esc(monthName(st.usage.month))}.</p>
+      <h1>${L("Серверы", "Servers")}</h1>
+      <p>${L(
+        `Пока VPN включён, пинг меряется через туннель, а переключение мгновенное. Рядом с сервером - расход трафика за ${esc(monthName(st.usage.month))}.`,
+        `While the VPN is on, ping is measured through the tunnel and switching is instant. Next to each server - traffic used in ${esc(monthName(st.usage.month))}.`,
+      )}</p>
       <div class="row">
-        ${s.servers.length ? `<button class="btn-ghost" data-action="ping" ${st.pinging ? "disabled" : ""}>${st.pinging ? "Меряем…" : "Проверить пинг"}</button>` : ""}
-        <button class="btn-light" data-action="open-add-server">Добавить</button>
+        ${s.servers.length ? `<button class="btn-ghost" data-action="ping" ${st.pinging ? "disabled" : ""}>${st.pinging ? L("Меряем…", "Measuring…") : L("Проверить пинг", "Check ping")}</button>` : ""}
+        <button class="btn-light" data-action="open-add-server">${L("Добавить", "Add")}</button>
       </div>
     </div>
     ${empty}${groups}${manualCard}`;
@@ -454,19 +477,19 @@ function ruleRows(list: AppList | SiteList): string {
   const rows = list === "proxy_apps" || list === "direct_apps"
     ? r[list].map((a) => `<div class="app-row">${appIcon(a.package, a.name)}
         <span class="n">${esc(a.name)}<small>${esc(a.package)}</small></span>
-        <button class="x-btn" data-action="remove-app" data-list="${list}" data-package="${esc(a.package)}" aria-label="Убрать ${esc(a.name)}">${icon.x()}</button></div>`)
+        <button class="x-btn" data-action="remove-app" data-list="${list}" data-package="${esc(a.package)}" aria-label="${L("Убрать", "Remove")} ${esc(a.name)}">${icon.x()}</button></div>`)
     : r[list].map((d) => `<div class="app-row"><div class="app-icon">${esc(d.charAt(0).toUpperCase())}</div>
         <span class="n">${esc(d)}</span>
-        <button class="x-btn" data-action="remove-domain" data-list="${list}" data-domain="${esc(d)}" aria-label="Убрать ${esc(d)}">${icon.x()}</button></div>`);
-  return rows.join("") || `<div class="empty small">Пока пусто</div>`;
+        <button class="x-btn" data-action="remove-domain" data-list="${list}" data-domain="${esc(d)}" aria-label="${L("Убрать", "Remove")} ${esc(d)}">${icon.x()}</button></div>`);
+  return rows.join("") || `<div class="empty small">${L("Пока пусто", "Empty for now")}</div>`;
 }
 
 function appCard(list: AppList, hollow: boolean, hint: string): string {
   return `<section class="card tight">
-    <div class="card-head"><div class="row"><span class="dot ${hollow ? "hollow" : ""}"></span><h2>${LIST_TITLE[list]}</h2></div><span class="count">${st.settings.rules[list].length}</span></div>
+    <div class="card-head"><div class="row"><span class="dot ${hollow ? "hollow" : ""}"></span><h2>${listTitle(list)}</h2></div><span class="count">${st.settings.rules[list].length}</span></div>
     <p class="card-hint">${hint}</p>
     ${ruleRows(list)}
-    <button class="dashed" data-action="open-add-app" data-list="${list}">${icon.plus}Добавить приложение</button>
+    <button class="dashed" data-action="open-add-app" data-list="${list}">${icon.plus}${L("Добавить приложение", "Add an app")}</button>
   </section>`;
 }
 
@@ -480,90 +503,102 @@ function rulesView(): string {
     return `<button class="preset ${on ? "on" : ""}" data-action="toggle-preset" data-id="${p.id}" aria-pressed="${on}">${on ? "✓ " : ""}${esc(p.title)}</button>`;
   }).join("");
   return `<div class="page-head">
-      <h1>Правила</h1>
-      <p>Что идёт через VPN, а что напрямую</p>
+      <h1>${L("Правила", "Rules")}</h1>
+      <p>${L("Что идёт через VPN, а что напрямую", "What goes via VPN and what goes direct")}</p>
     </div>
     ${st.settings.mode === "proxy"
-      ? `<div class="hint warn">${icon.info}<span>Сейчас режим «Прокси»: правила для приложений не действуют - без VPN Android не говорит, какое приложение открыло соединение. Правила для сайтов работают.</span></div>`
+      ? `<div class="hint warn">${icon.info}<span>${L(
+          "Сейчас режим «Прокси»: правила для приложений не действуют - без VPN Android не говорит, какое приложение открыло соединение. Правила для сайтов работают.",
+          "Proxy mode is on: app rules do not apply - without a VPN Android does not say which app opened a connection. Site rules still work.",
+        )}</span></div>`
       : ""}
     <section class="card">
-      <h2>Остальной трафик</h2>
-      <div class="seg" role="group" aria-label="Остальной трафик">
-        <button class="${r.final_route === "proxy" ? "on" : ""}" data-action="set-final" data-value="proxy">Через VPN</button>
-        <button class="${r.final_route === "direct" ? "on" : ""}" data-action="set-final" data-value="direct">Напрямую</button>
+      <h2>${L("Остальной трафик", "Other traffic")}</h2>
+      <div class="seg" role="group" aria-label="${L("Остальной трафик", "Other traffic")}">
+        <button class="${r.final_route === "proxy" ? "on" : ""}" data-action="set-final" data-value="proxy">${L("Через VPN", "Via VPN")}</button>
+        <button class="${r.final_route === "direct" ? "on" : ""}" data-action="set-final" data-value="direct">${L("Напрямую", "Direct")}</button>
       </div>
       <p class="card-hint">${r.final_route === "proxy"
-        ? "Через VPN идёт всё, кроме того, что ниже отмечено «напрямую»."
-        : "Через VPN идёт только то, что указано ниже, - остальное напрямую, как без VPN."}</p>
+        ? L("Через VPN идёт всё, кроме того, что ниже отмечено «напрямую».", "Everything goes via VPN except what is marked \"direct\" below.")
+        : L("Через VPN идёт только то, что указано ниже, - остальное напрямую, как без VPN.", "Only what is listed below goes via VPN - everything else goes direct, as without a VPN.")}</p>
     </section>
-    ${appCard("proxy_apps", false, "Весь трафик этих приложений идёт через VPN.")}
-    ${appCard("direct_apps", true, "Эти приложения ходят мимо VPN и не видят его - удобно для банков.")}
+    ${appCard("proxy_apps", false, L("Весь трафик этих приложений идёт через VPN.", "All traffic of these apps goes via VPN."))}
+    ${appCard("direct_apps", true, L("Эти приложения ходят мимо VPN и не видят его - удобно для банков.", "These apps bypass the VPN and do not see it - handy for banking apps."))}
     <section class="card tight">
-      <div class="card-head"><div class="row"><span class="dot ${tab === "direct_domains" ? "hollow" : ""}"></span><h2>Сайты</h2></div></div>
-      <div class="seg inset" role="tablist" aria-label="Какие сайты">${siteTab("proxy_domains", "Через VPN")}${siteTab("direct_domains", "Напрямую")}</div>
+      <div class="card-head"><div class="row"><span class="dot ${tab === "direct_domains" ? "hollow" : ""}"></span><h2>${L("Сайты", "Sites")}</h2></div></div>
+      <div class="seg inset" role="tablist" aria-label="${L("Какие сайты", "Which sites")}">${siteTab("proxy_domains", L("Через VPN", "Via VPN"))}${siteTab("direct_domains", L("Напрямую", "Direct"))}</div>
       ${ruleRows(tab)}
-      <button class="dashed" data-action="open-add-sites">${icon.plus}Добавить сайты</button>
+      <button class="dashed" data-action="open-add-sites">${icon.plus}${L("Добавить сайты", "Add sites")}</button>
       ${tab === "proxy_domains"
         ? `<div class="sep"></div>
-          <span class="card-hint">Готовые наборы - нажмите, чтобы включить</span>
+          <span class="card-hint">${L("Готовые наборы - нажмите, чтобы включить", "Ready-made sets - tap to turn on")}</span>
           <div class="chips">${presets}</div>`
-        : `<div class="hint">${icon.info}<span>Эти сайты всегда идут напрямую - даже из приложений «через VPN» и готовых наборов. Удобно для банков и госуслуг.</span></div>`}
+        : `<div class="hint">${icon.info}<span>${L(
+          "Эти сайты всегда идут напрямую - даже из приложений «через VPN» и готовых наборов. Удобно для банков и госуслуг.",
+          "These sites always go direct - even from \"via VPN\" apps and ready-made sets. Handy for banking and government sites.",
+        )}</span></div>`}
     </section>`;
 }
 
 function mb(bytes: number): string {
-  return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+  return `${num(bytes / 1024 / 1024)} ${L("МБ", "MB")}`;
 }
 
 function settingsView(): string {
   const u = st.update;
   const updateLine = st.checkingUpdate
-    ? "Проверяем…"
+    ? L("Проверяем…", "Checking…")
     : u
-      ? `Доступна версия ${esc(u.version)}`
+      ? `${L("Доступна версия", "Version available:")} ${esc(u.version)}`
       : u === false
-        ? "Установлена последняя версия"
-        : "Новые версии выходят на GitHub";
-  return `<div class="page-head"><h1>Настройки</h1></div>
+        ? L("Установлена последняя версия", "You have the latest version")
+        : L("Новые версии выходят на GitHub", "New versions are released on GitHub");
+  const langOpt = (l: Lang, label: string) =>
+    `<button class="${lang() === l ? "on" : ""}" data-action="set-lang" data-lang="${l}" aria-pressed="${lang() === l}">${label}</button>`;
+  return `<div class="page-head"><h1>${L("Настройки", "Settings")}</h1></div>
     <section class="card">
       <div class="card-head">
         <div class="sub-title"><h2>ShredingerBox v${esc(__APP_VERSION__)}</h2><span class="muted">${updateLine}</span></div>
         ${u
-          ? `<button class="btn-accent small" data-action="open-update">Обновить</button>`
-          : `<button class="btn-ghost" data-action="check-update" ${st.checkingUpdate ? "disabled" : ""}>Проверить</button>`}
+          ? `<button class="btn-accent small" data-action="open-update">${L("Обновить", "Update")}</button>`
+          : `<button class="btn-ghost" data-action="check-update" ${st.checkingUpdate ? "disabled" : ""}>${L("Проверить", "Check")}</button>`}
       </div>
     </section>
     <section class="card">
-      <h2>Запуск</h2>
+      <h2>${L("Язык", "Language")}</h2>
+      <div class="seg" role="group" aria-label="${L("Язык", "Language")}">${langOpt("ru", "Русский")}${langOpt("en", "English")}</div>
+    </section>
+    <section class="card">
+      <h2>${L("Запуск", "Startup")}</h2>
       <div class="set-row">
-        <div class="t"><b>При включении телефона</b><span>Подключаться сразу после перезагрузки</span></div>
-        <button class="switch ${st.settings.autostart ? "on" : ""}" data-action="toggle-autostart" role="switch" aria-checked="${st.settings.autostart}" aria-label="Подключаться при включении телефона"><span></span></button>
+        <div class="t"><b>${L("При включении телефона", "When the phone starts")}</b><span>${L("Подключаться сразу после перезагрузки", "Connect right after a reboot")}</span></div>
+        <button class="switch ${st.settings.autostart ? "on" : ""}" data-action="toggle-autostart" role="switch" aria-checked="${st.settings.autostart}" aria-label="${L("Подключаться при включении телефона", "Connect when the phone starts")}"><span></span></button>
       </div>
       <div class="set-row">
-        <div class="t"><b>Плитка в шторке</b><span>Включать VPN, не открывая приложение</span></div>
-        <button class="btn-ghost" data-action="add-tile">Добавить</button>
+        <div class="t"><b>${L("Плитка в шторке", "Quick settings tile")}</b><span>${L("Включать VPN, не открывая приложение", "Turn the VPN on without opening the app")}</span></div>
+        <button class="btn-ghost" data-action="add-tile">${L("Добавить", "Add")}</button>
       </div>
       <div class="set-row">
-        <div class="t"><b>Постоянная VPN</b><span>Android сам держит VPN включённым и не пускает трафик мимо него</span></div>
-        <button class="btn-ghost" data-action="vpn-settings">Открыть</button>
+        <div class="t"><b>${L("Постоянная VPN", "Always-on VPN")}</b><span>${L("Android сам держит VPN включённым и не пускает трафик мимо него", "Android keeps the VPN on and blocks traffic outside it")}</span></div>
+        <button class="btn-ghost" data-action="vpn-settings">${L("Открыть", "Open")}</button>
       </div>
     </section>
     <section class="card fold${st.folded.log ? " folded" : ""}">
-      ${foldHead("log", "Журнал ядра")}
+      ${foldHead("log", L("Журнал ядра", "Core log"))}
       ${st.folded.log ? "" : `
       <div class="row log-bar">
-        <p class="card-hint">Записи sing-box - пригодятся, если что-то не работает.</p>
-        <button class="x-btn" data-action="log-refresh" aria-label="Обновить журнал">${icon.refresh}</button>
-        <button class="link-btn" data-action="log-copy">Скопировать</button>
+        <p class="card-hint">${L("Записи sing-box - пригодятся, если что-то не работает.", "sing-box records - useful if something does not work.")}</p>
+        <button class="x-btn" data-action="log-refresh" aria-label="${L("Обновить журнал", "Refresh log")}">${icon.refresh}</button>
+        <button class="link-btn" data-action="log-copy">${L("Скопировать", "Copy")}</button>
       </div>
-      <pre class="code" id="log-text">${esc(st.log || "Журнал пуст - подключитесь, и здесь появятся записи ядра.")}</pre>`}
+      <pre class="code" id="log-text">${esc(st.log || L("Журнал пуст - подключитесь, и здесь появятся записи ядра.", "The log is empty - connect, and core records will appear here."))}</pre>`}
     </section>`;
 }
 
 // ---------- окна ----------
 
 function pickerRows(m: Extract<Modal, { kind: "add-app" }>): string {
-  if (!st.apps) return `<div class="empty">Загружаем список приложений…</div>`;
+  if (!st.apps) return `<div class="empty">${L("Загружаем список приложений…", "Loading the app list…")}</div>`;
   const taken = new Set(st.settings.rules[m.list].map((a) => a.package));
   const other: AppList = m.list === "proxy_apps" ? "direct_apps" : "proxy_apps";
   const inOther = new Set(st.settings.rules[other].map((a) => a.package));
@@ -574,65 +609,65 @@ function pickerRows(m: Extract<Modal, { kind: "add-app" }>): string {
     .map((a) => `<label class="proc">
       <input type="checkbox" data-pick="${esc(a.package)}" ${m.picked.has(a.package) ? "checked" : ""}>
       ${appIcon(a.package, a.name)}
-      <span class="n">${esc(a.name)}<small>${inOther.has(a.package) ? `сейчас ${other === "direct_apps" ? "напрямую" : "через VPN"} · ` : ""}${esc(a.package)}</small></span>
+      <span class="n">${esc(a.name)}<small>${inOther.has(a.package) ? `${other === "direct_apps" ? L("сейчас напрямую", "now direct") : L("сейчас через VPN", "now via VPN")} · ` : ""}${esc(a.package)}</small></span>
     </label>`);
-  return rows.join("") || `<div class="empty">Ничего не нашлось</div>`;
+  return rows.join("") || `<div class="empty">${L("Ничего не нашлось", "Nothing found")}</div>`;
 }
 
 function modalView(): string {
   const m = st.modal;
   if (!m) return "";
   const head = (title: string) =>
-    `<div class="modal-head"><h1>${title}</h1><button class="x-btn" data-action="close-modal" aria-label="Закрыть">${icon.x(16)}</button></div>`;
+    `<div class="modal-head"><h1>${title}</h1><button class="x-btn" data-action="close-modal" aria-label="${L("Закрыть", "Close")}">${icon.x(16)}</button></div>`;
   let body = "";
   if (m.kind === "add-server") {
-    body = `${head("Добавить серверы")}
+    body = `${head(L("Добавить серверы", "Add servers"))}
       <div class="modal-body">
         <textarea class="field" id="modal-text" rows="5" spellcheck="false" autocomplete="off"
-          placeholder="Ключи vless://, hy2://, trojan://, ss:// - по одному на строку, или ссылка на подписку https://…">${esc(m.text)}</textarea>
-        <button class="dashed" data-action="scan-qr">${icon.qr}Сканировать QR-код</button>
+          placeholder="${L("Ключи vless://, hy2://, trojan://, ss:// - по одному на строку, или ссылка на подписку https://…", "vless://, hy2://, trojan://, ss:// keys - one per line, or a subscription link https://…")}">${esc(m.text)}</textarea>
+        <button class="dashed" data-action="scan-qr">${icon.qr}${L("Сканировать QR-код", "Scan a QR code")}</button>
       </div>
-      <div class="modal-foot"><button class="btn-ghost" data-action="close-modal">Отмена</button><span class="grow"></span>
-        <button class="btn-accent" data-action="submit-server" ${m.busy ? "disabled" : ""}>${m.busy ? "Добавляем…" : "Добавить"}</button></div>`;
+      <div class="modal-foot"><button class="btn-ghost" data-action="close-modal">${L("Отмена", "Cancel")}</button><span class="grow"></span>
+        <button class="btn-accent" data-action="submit-server" ${m.busy ? "disabled" : ""}>${m.busy ? L("Добавляем…", "Adding…") : L("Добавить", "Add")}</button></div>`;
   } else if (m.kind === "clipboard") {
-    body = `${head(m.from === "link" ? "Добавить по ссылке?" : "Добавить из буфера обмена?")}
-      <div class="modal-body"><p class="lead">${m.from === "link" ? "Это" : "В буфере обмена"} ${esc(clipSummary(m.text))}.</p></div>
-      <div class="modal-foot"><button class="btn-ghost" data-action="dismiss-clipboard">Не сейчас</button><span class="grow"></span>
-        <button class="btn-accent" data-action="accept-clipboard" ${m.busy ? "disabled" : ""}>${m.busy ? "Добавляем…" : "Добавить"}</button></div>`;
+    body = `${head(m.from === "link" ? L("Добавить по ссылке?", "Add from the link?") : L("Добавить из буфера обмена?", "Add from the clipboard?"))}
+      <div class="modal-body"><p class="lead">${m.from === "link" ? L("Это", "This is") : L("В буфере обмена", "The clipboard has")} ${esc(clipSummary(m.text))}.</p></div>
+      <div class="modal-foot"><button class="btn-ghost" data-action="dismiss-clipboard">${L("Не сейчас", "Not now")}</button><span class="grow"></span>
+        <button class="btn-accent" data-action="accept-clipboard" ${m.busy ? "disabled" : ""}>${m.busy ? L("Добавляем…", "Adding…") : L("Добавить", "Add")}</button></div>`;
   } else if (m.kind === "update") {
     const i = m.info;
-    body = `${head(`Доступна версия ${esc(i.version)}`)}
+    body = `${head(`${L("Доступна версия", "Version available:")} ${esc(i.version)}`)}
       <div class="modal-body">
-        <div class="row">${mascot(56, "wink")}<p class="lead">Сейчас установлена ${esc(i.current)}.${i.size ? ` Скачается ${mb(i.size)}.` : ""}
-          После загрузки Android попросит подтвердить установку.</p></div>
+        <div class="row">${mascot(56, "wink")}<p class="lead">${L("Сейчас установлена", "Installed now:")} ${esc(i.current)}.${i.size ? ` ${L("Скачается", "Download size:")} ${mb(i.size)}.` : ""}
+          ${L("После загрузки Android попросит подтвердить установку.", "After the download Android will ask you to confirm the install.")}</p></div>
         ${i.notes ? notesHtml(i.notes) : ""}
       </div>
-      <div class="modal-foot"><button class="btn-ghost" data-action="snooze-update" ${m.busy ? "disabled" : ""}>Позже</button><span class="grow"></span>
-        <button class="btn-accent" data-action="install-update" ${m.busy ? "disabled" : ""}>${m.busy ? "Скачиваем…" : "Обновить"}</button></div>`;
+      <div class="modal-foot"><button class="btn-ghost" data-action="snooze-update" ${m.busy ? "disabled" : ""}>${L("Позже", "Later")}</button><span class="grow"></span>
+        <button class="btn-accent" data-action="install-update" ${m.busy ? "disabled" : ""}>${m.busy ? L("Скачиваем…", "Downloading…") : L("Обновить", "Update")}</button></div>`;
   } else if (m.kind === "whats-new") {
-    body = `${head(`Что нового в ${esc(m.version)}`)}
+    body = `${head(`${L("Что нового в", "What's new in")} ${esc(m.version)}`)}
       <div class="modal-body">
-        <div class="row">${mascot(56, "peek")}<p class="lead">Приложение обновилось. Вот что изменилось:</p></div>
+        <div class="row">${mascot(56, "peek")}<p class="lead">${L("Приложение обновилось. Вот что изменилось:", "The app has been updated. Here is what changed:")}</p></div>
         ${notesHtml(m.text)}
       </div>
-      <div class="modal-foot"><span class="grow"></span><button class="btn-accent" data-action="close-modal">Понятно</button></div>`;
+      <div class="modal-foot"><span class="grow"></span><button class="btn-accent" data-action="close-modal">${L("Понятно", "Got it")}</button></div>`;
   } else if (m.kind === "add-app") {
-    body = `${head(LIST_TITLE[m.list])}
+    body = `${head(listTitle(m.list))}
       <div class="modal-body">
-        <input class="field" id="app-filter" type="search" placeholder="Поиск по названию" value="${esc(m.filter)}" autocomplete="off">
+        <input class="field" id="app-filter" type="search" placeholder="${L("Поиск по названию", "Search by name")}" value="${esc(m.filter)}" autocomplete="off">
         <div class="pick-list" id="pick-list">${pickerRows(m)}</div>
       </div>
-      <div class="modal-foot"><button class="btn-ghost" data-action="close-modal">Отмена</button><span class="grow"></span>
-        <button class="btn-accent" id="pick-submit" data-action="submit-apps" ${m.picked.size ? "" : "disabled"}>Добавить${m.picked.size ? ` (${m.picked.size})` : ""}</button></div>`;
+      <div class="modal-foot"><button class="btn-ghost" data-action="close-modal">${L("Отмена", "Cancel")}</button><span class="grow"></span>
+        <button class="btn-accent" id="pick-submit" data-action="submit-apps" ${m.picked.size ? "" : "disabled"}>${L("Добавить", "Add")}${m.picked.size ? ` (${m.picked.size})` : ""}</button></div>`;
   } else {
-    body = `${head(LIST_TITLE[m.list])}
+    body = `${head(listTitle(m.list))}
       <div class="modal-body">
         <textarea class="field" id="modal-text" rows="5" spellcheck="false" autocomplete="off" autocapitalize="off"
-          placeholder="example.com, discord.gg - можно сразу списком">${esc(m.text)}</textarea>
+          placeholder="${L("example.com, discord.gg - можно сразу списком", "example.com, discord.gg - a whole list at once is fine")}">${esc(m.text)}</textarea>
         <span class="card-hint" id="site-stats">${esc(statsText(siteStats(m.list, m.text)))}</span>
       </div>
-      <div class="modal-foot"><button class="btn-ghost" data-action="close-modal">Отмена</button><span class="grow"></span>
-        <button class="btn-accent" data-action="submit-sites">Добавить</button></div>`;
+      <div class="modal-foot"><button class="btn-ghost" data-action="close-modal">${L("Отмена", "Cancel")}</button><span class="grow"></span>
+        <button class="btn-accent" data-action="submit-sites">${L("Добавить", "Add")}</button></div>`;
   }
   return `<div class="overlay" data-action="overlay"><div class="modal" role="dialog">${body}</div></div>`;
 }
@@ -648,11 +683,11 @@ function render() {
   const focusId = active?.id && root.contains(active) ? active.id : "";
   const caret = focusId ? active!.selectionStart : null;
   root.innerHTML = `<main class="view">${page}</main>
-    <nav class="tabs" aria-label="Разделы">
-      ${tab("home", "Главная", icon.power(22))}
-      ${tab("servers", "Серверы", icon.globe)}
-      ${tab("rules", "Правила", icon.rules)}
-      ${tab("settings", "Настройки", icon.gear)}
+    <nav class="tabs" aria-label="${L("Разделы", "Sections")}">
+      ${tab("home", L("Главная", "Home"), icon.power(22))}
+      ${tab("servers", L("Серверы", "Servers"), icon.globe)}
+      ${tab("rules", L("Правила", "Rules"), icon.rules)}
+      ${tab("settings", L("Настройки", "Settings"), icon.gear)}
     </nav>
     ${modalView()}`;
   document.body.classList.toggle("locked", !!st.modal);
@@ -735,7 +770,7 @@ function saveRules(change: (r: Rules) => void) {
   act(async () => {
     try {
       st.settings = await invoke<Settings>("set_rules", { rules });
-      if (restart) toast("Правила применены");
+      if (restart) toast(L("Правила применены", "Rules applied"));
     } catch (e) {
       st.settings = await invoke<Settings>("get_settings");
       throw e;
@@ -775,7 +810,7 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       return act(async () => {
         if (st.state === "stopped") {
           // В режиме «Прокси» VPN не поднимается - разрешение не нужно.
-          if (st.settings.mode === "tun" && !(await invoke<boolean>("vpn_prepare"))) throw "Без разрешения на VPN подключиться нельзя";
+          if (st.settings.mode === "tun" && !(await invoke<boolean>("vpn_prepare"))) throw L("Без разрешения на VPN подключиться нельзя", "Cannot connect without the VPN permission");
           await invoke("vpn_connect");
           st.state = "starting";
         } else {
@@ -817,7 +852,7 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       return act(async () => {
         try {
           st.settings = await invoke<Settings>("refresh_subscriptions");
-          toast("Подписки обновлены");
+          toast(L("Подписки обновлены", "Subscriptions refreshed"));
         } catch (e) {
           // Часть подписок могла обновиться - перечитываем то, что сохранилось.
           st.settings = await invoke<Settings>("get_settings");
@@ -834,13 +869,13 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
     case "submit-server": {
       const m = st.modal as Extract<Modal, { kind: "add-server" }>;
       const text = m.text.trim();
-      if (!text) return toast("Вставьте ключ или ссылку на подписку", true);
+      if (!text) return toast(L("Вставьте ключ или ссылку на подписку", "Paste a key or a subscription link"), true);
       m.busy = true;
       render();
       try {
         await addFromText(text);
         st.modal = null;
-        toast("Добавлено");
+        toast(L("Добавлено", "Added"));
       } catch (e) {
         m.busy = false;
         toast(errText(e), true);
@@ -854,7 +889,7 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       try {
         await addFromText(m.text);
         st.modal = null;
-        toast("Добавлено");
+        toast(L("Добавлено", "Added"));
       } catch (e) {
         clipDismissed = m.text;
         st.modal = null;
@@ -921,7 +956,7 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
     case "submit-sites": {
       const m = st.modal as Extract<Modal, { kind: "add-sites" }>;
       const { add } = siteStats(m.list, m.text);
-      if (!add.length) return toast("Не нашлось ни одного нового адреса сайта", true);
+      if (!add.length) return toast(L("Не нашлось ни одного нового адреса сайта", "No new site addresses found"), true);
       st.modal = null;
       return saveRules((r) => (r[m.list] = [...r[m.list], ...add]));
     }
@@ -954,7 +989,7 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
     case "add-tile":
       try {
         if (!(await invoke<boolean>("add_tile"))) {
-          toast("Откройте шторку, нажмите карандаш и перетащите плитку ShredingerBox наверх");
+          toast(L("Откройте шторку, нажмите карандаш и перетащите плитку ShredingerBox наверх", "Open quick settings, tap the pencil and drag the ShredingerBox tile up"));
         }
       } catch (e) {
         toast(errText(e), true);
@@ -963,7 +998,7 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
     case "vpn-settings":
       try {
         await invoke("open_vpn_settings");
-        toast("Нажмите шестерёнку у ShredingerBox и включите «Постоянная VPN»");
+        toast(L("Нажмите шестерёнку у ShredingerBox и включите «Постоянная VPN»", "Tap the gear next to ShredingerBox and turn on \"Always-on VPN\""));
       } catch (e) {
         toast(errText(e), true);
       }
@@ -984,7 +1019,7 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       const mode = el.dataset.mode as Mode;
       if (mode === s.mode) return;
       if (mode === "tun" && st.state !== "stopped" && !(await invoke<boolean>("vpn_prepare"))) {
-        return toast("Без разрешения на VPN режим TUN не включить", true);
+        return toast(L("Без разрешения на VPN режим TUN не включить", "TUN mode needs the VPN permission"), true);
       }
       s.mode = mode;
       return act(async () => {
@@ -995,6 +1030,13 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
           throw e;
         }
       });
+    }
+    case "set-lang": {
+      const next = el.dataset.lang as Lang;
+      if (next === lang()) return;
+      setLang(next);
+      render();
+      return applyLang(next);
     }
     case "check-update":
       return checkUpdate(true);
@@ -1023,9 +1065,9 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
     case "log-copy":
       try {
         await navigator.clipboard.writeText(st.log);
-        toast("Журнал скопирован");
+        toast(L("Журнал скопирован", "Log copied"));
       } catch {
-        toast("Не удалось скопировать", true);
+        toast(L("Не удалось скопировать", "Could not copy"), true);
       }
       return;
   }
@@ -1059,7 +1101,7 @@ root.addEventListener("change", (ev) => {
   else m.picked.delete(t.dataset.pick);
   const btn = document.getElementById("pick-submit") as HTMLButtonElement;
   btn.disabled = !m.picked.size;
-  btn.textContent = m.picked.size ? `Добавить (${m.picked.size})` : "Добавить";
+  btn.textContent = m.picked.size ? `${L("Добавить", "Add")} (${m.picked.size})` : L("Добавить", "Add");
 });
 
 // ---------- обновления ----------
@@ -1151,6 +1193,15 @@ document.addEventListener("visibilitychange", onReturn);
 
 // ---------- запуск ----------
 
+/** Сообщить язык Rust и Android-части (уведомление, плитка, ошибки) и запомнить его. */
+async function applyLang(l: Lang) {
+  try {
+    st.settings = await invoke<Settings>("set_language", { lang: l });
+  } catch {
+    // Не запомнился - в следующий раз снова возьмём из системы.
+  }
+}
+
 /** Первая версия хранила один ключ в localStorage - переносим его в настройки. */
 async function migrateOldKey() {
   let key = "";
@@ -1179,6 +1230,8 @@ async function migrateOldKey() {
   if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) await import("./mock");
   try {
     st.settings = await invoke<Settings>("get_settings");
+    setLang(st.settings.language ?? systemLang());
+    await applyLang(lang());
     st.presets = await invoke<Preset[]>("get_presets");
     await migrateOldKey();
   } catch (e) {

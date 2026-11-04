@@ -32,20 +32,27 @@ jobs:
             exit 1
           fi
 
-      # Описание релиза: раздел этой версии из CHANGELOG.md - его же приложение показывает
-      # в окне обновления, - и инструкция для первой установки (окно обновления её отрезает).
-      - name: Описание релиза из CHANGELOG.md
+      # Описание релиза: раздел этой версии из CHANGELOG.md и CHANGELOG.en.md - их же
+      # приложение показывает в окне обновления на своём языке, - и инструкция для первой
+      # установки (окно обновления её отрезает). Английская половина начинается с «## English».
+      - name: Описание релиза из CHANGELOG
         run: |
           version="${GITHUB_REF_NAME#v}"
-          awk -v head="## $version" '
-            $0 == head { found = 1; next }
-            found && /^## / { exit }
-            found { print }
-          ' CHANGELOG.md > "$RUNNER_TEMP/changes.md"
-          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/changes.md"; then
-            echo "::error::В CHANGELOG.md нет раздела «## $version» - допишите, что изменилось"
-            exit 1
-          fi
+          section() {
+            awk -v head="## $version" '
+              $0 == head { found = 1; next }
+              found && /^## / { exit }
+              found { print }
+            ' "$1"
+          }
+          section CHANGELOG.md > "$RUNNER_TEMP/changes.md"
+          section CHANGELOG.en.md > "$RUNNER_TEMP/changes.en.md"
+          for f in changes.md changes.en.md; do
+            if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/$f"; then
+              echo "::error::Нет раздела «## $version» в CHANGELOG.md или CHANGELOG.en.md - допишите, что изменилось"
+              exit 1
+            fi
+          done
           {
             cat "$RUNNER_TEMP/changes.md"
             echo
@@ -54,6 +61,18 @@ jobs:
             echo "2. Откройте его. Android спросит, можно ли устанавливать приложения из браузера или «Файлов», - разрешите."
             echo "3. Откройте ShredingerBox и добавьте подписку или ключ, которые вам прислали: вставьте в «Добавить», отсканируйте QR-код или просто скопируйте - приложение предложит добавить само."
             echo "4. Нажмите большую кнопку. В первый раз Android попросит разрешить VPN."
+            echo
+            echo "---"
+            echo
+            echo "## English"
+            echo
+            cat "$RUNNER_TEMP/changes.en.md"
+            echo
+            echo "**First install**"
+            echo "1. Download the \`.apk\` file below to your phone."
+            echo "2. Open it. Android will ask whether apps may be installed from the browser or \"Files\" - allow it."
+            echo "3. Open ShredingerBox and add the subscription or key you were sent: paste it in \"Add\", scan the QR code, or just copy it - the app will offer to add it."
+            echo "4. Tap the big button. The first time, Android will ask to allow the VPN."
           } > "$RUNNER_TEMP/release.md"
 
       - uses: actions/setup-node@v4
