@@ -1,5 +1,7 @@
 # ShredingerBox Mobile
 
+**Русский** · [English](README.en.md)
+
 VPN-клиент для Android на ядре [sing-box](https://github.com/SagerNet/sing-box). Младший брат
 десктопного [ShredingerBox](https://github.com/ThisIsSuigetsu/shredingerbox): добавил подписку,
 нажал одну кнопку - подключено.
@@ -121,13 +123,14 @@ npx tauri android build --debug --apk --target aarch64
 
 Релиз собирает GitHub Actions (`.github/workflows/release.yml`) по метке `v*`: ядро, подписанный
 APK для arm64 и релиз с ним. Описание релиза берётся из раздела этой версии в
-[CHANGELOG.md](CHANGELOG.md) - его же приложение показывает в окне обновления.
+[CHANGELOG.md](CHANGELOG.md) и [CHANGELOG.en.md](CHANGELOG.en.md) - приложение показывает в окне
+обновления тот, что на его языке.
 
-1. Дописать в `CHANGELOG.md` раздел `## X.Y.Z` - что изменилось, простыми словами.
+1. Дописать в `CHANGELOG.md` и `CHANGELOG.en.md` раздел `## X.Y.Z` - что изменилось, простыми словами.
 2. Поднять версию в `package.json`, `src-tauri/tauri.conf.json` и `src-tauri/Cargo.toml`.
 3. Закоммитить, поставить метку `vX.Y.Z` и отправить коммит и метку.
 
-Сборка проверяет, что версия в метке совпадает с `package.json` и что в `CHANGELOG.md` есть её раздел.
+Сборка проверяет, что версия в метке совпадает с `package.json` и что в обоих CHANGELOG есть её раздел.
 
 Подпись: ключ один навсегда - APK с другим ключом Android не поставит поверх установленного.
 Ключ хранится в секретах репозитория `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
