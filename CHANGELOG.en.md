@@ -4,6 +4,7 @@
 
 - Light theme. By default it follows the system, and you can pick one in "Settings" → "Theme".
 - Servers can be sorted by ping: the "By ping" button on the "Servers" tab.
+- Minor fixes.
 
 ## 0.5.0
 
