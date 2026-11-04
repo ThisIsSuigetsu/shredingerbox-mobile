@@ -97,12 +97,35 @@ const FOLD_KEYS: Record<Fold, string> = {
   log: "shredingerbox.logFolded",
 };
 
+const SORT_KEY = "shredingerbox.sortByPing";
+const THEME_KEY = "shredingerbox.theme";
+
+/** Тема: как в системе или выбранная в настройках. */
+type Theme = "system" | "light" | "dark";
+
 /** Удобства одного телефона в localStorage: может быть недоступен - тогда просто по умолчанию. */
 function readFlag(key: string): boolean {
   try {
     return localStorage.getItem(key) === "1";
   } catch {
     return false;
+  }
+}
+
+function writePref(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Не запомнится - не страшно.
+  }
+}
+
+function readTheme(): Theme {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    return t === "light" || t === "dark" ? t : "system";
+  } catch {
+    return "system";
   }
 }
 
@@ -133,6 +156,9 @@ const st = {
   checkingUpdate: false,
   /** Свёрнутые карточки - запоминаются на этом телефоне. */
   folded: { mode: readFlag(FOLD_KEYS.mode), log: readFlag(FOLD_KEYS.log) } as Record<Fold, boolean>,
+  /** Серверы по возрастанию пинга, а не в порядке подписки. */
+  sortByPing: readFlag(SORT_KEY),
+  theme: readTheme(),
   /** Расход по серверам за текущий месяц и скорость. */
   usage: { month: "", servers: {}, speed: { up: 0, down: 0 } } as MonthTraffic,
 };
@@ -363,6 +389,19 @@ function foldHead(card: Fold, title: string, summary = ""): string {
   </button>`;
 }
 
+/** Место сервера при сортировке по пингу: сначала ответившие по возрастанию, потом
+ *  ещё не измеренные и UDP, в конце - те, что не ответили. */
+function pingRank(id: string): number {
+  const p = st.pings[id];
+  if (!p || p.udp) return 1e6;
+  return p.ms == null ? 2e6 : p.ms;
+}
+
+/** Список в выбранном порядке. Сортировка устойчивая: равные остаются как в подписке. */
+function ordered(list: Server[]): Server[] {
+  return st.sortByPing ? [...list].sort((a, b) => pingRank(a.id) - pingRank(b.id)) : list;
+}
+
 function serverRow(x: Server, removable: boolean): string {
   const f = splitFlag(x.name);
   const on = x.id === selectedServer()?.id;
@@ -391,7 +430,7 @@ function homeView(): string {
     ? `<span class="flag">${esc(flag!.code)}</span><span class="cur-name">${esc(flag!.name)}</span>${st.pings[srv.id] ? pingView(srv.id) : ""}`
     : L("Добавьте сервер, чтобы подключиться", "Add a server to connect");
   const servers = s.servers.length
-    ? s.servers.map((x) => serverRow(x, false)).join("")
+    ? ordered(s.servers).map((x) => serverRow(x, false)).join("")
     : `<div class="empty">${L(
         `Серверов пока нет. Вставьте ключ <span class="mono">vless://</span>, <span class="mono">hy2://</span> или ссылку на подписку - их присылает тот, кто дал вам VPN.`,
         `No servers yet. Paste a <span class="mono">vless://</span> or <span class="mono">hy2://</span> key or a subscription link - you get them from whoever gave you the VPN.`,
@@ -449,13 +488,13 @@ function serversView(): string {
           ${deleteButton(`sub:${sub.url}`, `${L("Удалить подписку", "Delete subscription")} ${sub.name}`)}
         </div>
       </div>
-      <div class="server-list">${list.map((x) => serverRow(x, false)).join("") || `<div class="empty">${L("В подписке нет серверов", "The subscription has no servers")}</div>`}</div>
+      <div class="server-list">${ordered(list).map((x) => serverRow(x, false)).join("") || `<div class="empty">${L("В подписке нет серверов", "The subscription has no servers")}</div>`}</div>
     </section>`;
   }).join("");
   const manual = s.servers.filter((x) => !x.subscription);
   const manualCard = manual.length
     ? `<section class="card"><div class="card-head"><h2>${L("Добавленные вручную", "Added manually")} <span class="count">· ${manual.length}</span></h2></div>
-        <div class="server-list">${manual.map((x) => serverRow(x, true)).join("")}</div></section>`
+        <div class="server-list">${ordered(manual).map((x) => serverRow(x, true)).join("")}</div></section>`
     : "";
   const empty = !s.servers.length ? `<section class="card"><div class="empty">${L("Серверов пока нет. Вставьте ключ или ссылку на подписку.", "No servers yet. Paste a key or a subscription link.")}</div></section>` : "";
   return `<div class="page-head">
@@ -465,7 +504,8 @@ function serversView(): string {
         `While the VPN is on, ping is measured through the tunnel and switching is instant. Next to each server - traffic used in ${esc(monthName(st.usage.month))}.`,
       )}</p>
       <div class="row">
-        ${s.servers.length ? `<button class="btn-ghost" data-action="ping" ${st.pinging ? "disabled" : ""}>${st.pinging ? L("Меряем…", "Measuring…") : L("Проверить пинг", "Check ping")}</button>` : ""}
+        ${s.servers.length ? `<button class="btn-ghost" data-action="ping" ${st.pinging ? "disabled" : ""}>${st.pinging ? L("Меряем…", "Measuring…") : L("Проверить пинг", "Check ping")}</button>
+          <button class="btn-ghost${st.sortByPing ? " on" : ""}" data-action="sort-ping" aria-pressed="${st.sortByPing}">${L("По пингу", "By ping")}</button>` : ""}
         <button class="btn-light" data-action="open-add-server">${L("Добавить", "Add")}</button>
       </div>
     </div>
@@ -553,6 +593,8 @@ function settingsView(): string {
       : u === false
         ? L("Установлена последняя версия", "You have the latest version")
         : L("Новые версии выходят на GitHub", "New versions are released on GitHub");
+  const themeOpt = (t: Theme, label: string) =>
+    `<button class="${st.theme === t ? "on" : ""}" data-action="set-theme" data-theme="${t}" aria-pressed="${st.theme === t}">${label}</button>`;
   const langOpt = (l: Lang, label: string) =>
     `<button class="${lang() === l ? "on" : ""}" data-action="set-lang" data-lang="${l}" aria-pressed="${lang() === l}">${label}</button>`;
   return `<div class="page-head"><h1>${L("Настройки", "Settings")}</h1></div>
@@ -567,6 +609,10 @@ function settingsView(): string {
     <section class="card">
       <h2>${L("Язык", "Language")}</h2>
       <div class="seg" role="group" aria-label="${L("Язык", "Language")}">${langOpt("ru", "Русский")}${langOpt("en", "English")}</div>
+    </section>
+    <section class="card">
+      <h2>${L("Тема", "Theme")}</h2>
+      <div class="seg" role="group" aria-label="${L("Тема", "Theme")}">${themeOpt("system", L("Как в системе", "System"))}${themeOpt("light", L("Светлая", "Light"))}${themeOpt("dark", L("Тёмная", "Dark"))}</div>
     </section>
     <section class="card">
       <h2>${L("Запуск", "Startup")}</h2>
@@ -1038,6 +1084,18 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       render();
       return applyLang(next);
     }
+    case "sort-ping":
+      st.sortByPing = !st.sortByPing;
+      writePref(SORT_KEY, st.sortByPing ? "1" : "");
+      render();
+      // Сортировать не по чему - сразу меряем.
+      if (st.sortByPing && !Object.keys(st.pings).length) pingAll();
+      return;
+    case "set-theme":
+      st.theme = el.dataset.theme as Theme;
+      writePref(THEME_KEY, st.theme);
+      applyTheme();
+      return render();
     case "check-update":
       return checkUpdate(true);
     case "open-update":
@@ -1190,6 +1248,21 @@ async function onReturn() {
 // Буфер читается только когда окно в фокусе - проверяем при каждом возвращении в приложение.
 window.addEventListener("focus", onReturn);
 document.addEventListener("visibilitychange", onReturn);
+
+// ---------- тема ----------
+
+const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+
+/** Цвета страницы и значков в строке состояния под выбранную тему. */
+function applyTheme() {
+  const dark = st.theme === "system" ? systemDark.matches : st.theme === "dark";
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  // Строка состояния и навигации прозрачные - значки на светлой теме должны быть тёмными.
+  invoke("set_system_bars", { light: !dark }).catch(() => {});
+}
+
+systemDark.addEventListener("change", () => st.theme === "system" && applyTheme());
+applyTheme();
 
 // ---------- запуск ----------
 

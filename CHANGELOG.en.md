@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+
+- Light theme. By default it follows the system, and you can pick one in "Settings" → "Theme".
+- Servers can be sorted by ping: the "By ping" button on the "Servers" tab.
+
 ## 0.5.0
 
 - English language. The app picks it from the phone language, and you can switch it in

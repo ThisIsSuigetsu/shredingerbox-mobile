@@ -84,6 +84,8 @@ mockIPC((cmd, args) => {
       return linkOnce ? null : ((linkOnce = true), "https://panel.example.org/sub/abc");
     case "scan_qr":
       return "hy2://pass@hy.example.org:443#%F0%9F%87%A9%F0%9F%87%AA%20QR";
+    case "set_system_bars":
+      return null;
     case "set_language":
       settings.language = a.lang;
       return copy();

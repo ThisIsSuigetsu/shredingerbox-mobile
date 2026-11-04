@@ -24,6 +24,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.util.Base64
 import androidx.core.content.FileProvider
+import androidx.core.view.WindowCompat
 import app.tauri.plugin.JSArray
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -86,6 +87,18 @@ class VpnPlugin(private val activity: Activity) : Plugin(activity) {
   override fun onNewIntent(intent: Intent) = remember(intent)
 
   private fun t(ru: String, en: String) = Lang.t(activity, ru, en)
+
+  /** Тёмные значки в строке состояния и навигации - когда интерфейс в светлой теме. */
+  @Command
+  fun setSystemBars(invoke: Invoke) {
+    val light = invoke.parseArgs(FlagArgs::class.java).on
+    activity.runOnUiThread {
+      val bars = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+      bars.isAppearanceLightStatusBars = light
+      bars.isAppearanceLightNavigationBars = light
+      invoke.resolve()
+    }
+  }
 
   /** Язык из настроек приложения - для уведомления, плитки и ошибок. */
   @Command

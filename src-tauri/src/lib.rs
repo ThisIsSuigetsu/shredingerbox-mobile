@@ -337,6 +337,13 @@ async fn set_language(app: AppHandle, state: State<'_, AppState>, lang: String) 
     Ok(s)
 }
 
+/// Тёмные значки в строке состояния и навигации - для светлой темы интерфейса.
+#[tauri::command]
+async fn set_system_bars(app: AppHandle, light: bool) -> Result<(), String> {
+    let _: Value = vpn::call(&app, "setSystemBars", json!({ "on": light })).await?;
+    Ok(())
+}
+
 // ---------- запуск без приложения, ссылки, QR ----------
 
 #[tauri::command]
@@ -549,6 +556,7 @@ pub fn run() {
             list_apps,
             set_mode,
             set_language,
+            set_system_bars,
             check_update,
             install_update,
             get_traffic,
