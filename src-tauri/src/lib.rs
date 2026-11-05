@@ -80,7 +80,7 @@ fn build_config(s: &Settings, api: &config::Api) -> Result<Value, String> {
         let name = &selected.name;
         return Err(tr!("Не удалось разобрать ключ сервера «{name}»", "Could not read the key of server \"{name}\""));
     }
-    Ok(config::build(s.mode, &s.rules, &servers, &server_tag(&selected.id), api))
+    Ok(config::build(s.mode, &s.rules, &servers, &server_tag(&selected.id), s.auto_select, api))
 }
 
 fn api_client() -> Option<reqwest::Client> {
@@ -135,7 +135,7 @@ async fn add_from_text(state: State<'_, AppState>, text: String) -> Result<Setti
     let lower = text.to_ascii_lowercase();
     if lower.starts_with("http://") || lower.starts_with("https://") {
         let fetched = subscription::fetch(&text).await?;
-        s.upsert_subscription(&text, &fetched.name);
+        s.upsert_subscription(&text, &fetched.name, fetched.usage);
         s.merge_subscription(&text, fetched.links);
     } else {
         s.add_keys(&text)?;
@@ -152,7 +152,7 @@ async fn refresh_subscriptions(state: State<'_, AppState>) -> Result<Settings, S
     for sub in s.subscriptions.clone() {
         match subscription::fetch(&sub.url).await {
             Ok(fetched) => {
-                s.upsert_subscription(&sub.url, &fetched.name);
+                s.upsert_subscription(&sub.url, &fetched.name, fetched.usage);
                 s.merge_subscription(&sub.url, fetched.links);
             }
             Err(e) => errors.push(format!("{}: {e}", sub.name)),
@@ -163,6 +163,50 @@ async fn refresh_subscriptions(state: State<'_, AppState>) -> Result<Settings, S
         return Err(errors.join("\n"));
     }
     Ok(s)
+}
+
+/// Подписки старше 12 часов обновляются при запуске сами, тихо: новые серверы и адреса
+/// из панели доходят до всех без кнопки. Что не загрузилось - попробуем в следующий раз.
+/// None - обновлять было нечего.
+#[tauri::command]
+async fn refresh_stale_subscriptions(state: State<'_, AppState>) -> Result<Option<Settings>, String> {
+    const STALE: u64 = 12 * 60 * 60;
+    let now = settings::now_secs();
+    let mut s = state.snapshot();
+    let stale: Vec<String> = s
+        .subscriptions
+        .iter()
+        .filter(|sub| sub.updated.map_or(true, |t| now.saturating_sub(t) >= STALE))
+        .map(|sub| sub.url.clone())
+        .collect();
+    let mut changed = false;
+    for url in stale {
+        if let Ok(fetched) = subscription::fetch(&url).await {
+            s.upsert_subscription(&url, &fetched.name, fetched.usage);
+            s.merge_subscription(&url, fetched.links);
+            changed = true;
+        }
+    }
+    if !changed {
+        return Ok(None);
+    }
+    // Пока скачивали, пользователь мог что-то поменять - берём свежие настройки
+    // и переносим в них только подписки.
+    let mut current = state.snapshot();
+    let urls: Vec<String> = s
+        .subscriptions
+        .iter()
+        .filter(|sub| current.subscriptions.iter().any(|c| c.url == sub.url))
+        .map(|sub| sub.url.clone())
+        .collect();
+    for url in &urls {
+        let sub = s.subscriptions.iter().find(|sub| &sub.url == url).unwrap();
+        current.upsert_subscription(url, &sub.name, sub.usage);
+        let links = s.servers.iter().filter(|srv| srv.subscription.as_deref() == Some(url)).map(|srv| srv.link.clone()).collect();
+        current.merge_subscription(url, links);
+    }
+    state.store(current.clone())?;
+    Ok(Some(current))
 }
 
 #[tauri::command]
@@ -320,6 +364,30 @@ async fn set_mode(app: AppHandle, state: State<'_, AppState>, mode: Mode) -> Res
         restart(&app, &state, &s).await?;
     }
     Ok(s)
+}
+
+/// «Лучший сервер автоматически». Если ядро запущено - переподключаемся с новым конфигом.
+#[tauri::command]
+async fn set_auto_select(app: AppHandle, state: State<'_, AppState>, on: bool) -> Result<Settings, String> {
+    let mut s = state.snapshot();
+    s.auto_select = on;
+    state.store(s.clone())?;
+    if status(&app).await?.state != "stopped" {
+        restart(&app, &state, &s).await?;
+    }
+    Ok(s)
+}
+
+/// Какой сервер сейчас выбрал «Авто» (id), если VPN включён.
+#[tauri::command]
+async fn auto_server(app: AppHandle, state: State<'_, AppState>) -> Result<Option<String>, String> {
+    let Some(api) = running_api(&app, &state).await? else { return Ok(None) };
+    let Some(client) = api_client() else { return Ok(None) };
+    let url = format!("http://127.0.0.1:{}/proxies/{}", api.port, config::AUTO_TAG);
+    let Ok(resp) = client.get(url).bearer_auth(&api.secret).send().await else { return Ok(None) };
+    let Ok(text) = resp.text().await else { return Ok(None) };
+    let Ok(value) = serde_json::from_str::<Value>(&text) else { return Ok(None) };
+    Ok(value["now"].as_str().and_then(|t| t.strip_prefix("srv-")).map(str::to_string))
 }
 
 /// Язык интерфейса: запоминаем, переводим сообщения Rust и отдаём Android-части
@@ -546,6 +614,9 @@ pub fn run() {
             get_settings,
             add_from_text,
             refresh_subscriptions,
+            refresh_stale_subscriptions,
+            set_auto_select,
+            auto_server,
             remove_server,
             remove_subscription,
             select_server,

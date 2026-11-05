@@ -198,6 +198,9 @@ textarea.field { padding: 12px; resize: none; line-height: 1.5; font: 13px/1.5 u
 .status-sub .ping { margin-left: 0; padding-left: 0; }
 .status-month { font-size: 13px; color: var(--muted); min-height: 1em; margin-top: -4px; }
 .status-month:empty { display: none; }
+.status-month.warn, .sub-usage.warn { color: var(--amber); }
+.sub-usage { font-size: 12px; color: var(--muted); }
+.flag.auto { color: var(--accent-text); background: var(--accent-soft); }
 .speeds { display: flex; gap: 10px; margin-top: 4px; }
 .speed {
   height: 34px; padding: 0 14px; border-radius: 17px; background: var(--card);

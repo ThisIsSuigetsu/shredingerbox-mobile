@@ -10,11 +10,14 @@ const settings = {
     { id: "a3", name: "🇫🇮 Финляндия - очень длинное название сервера", link: "", subscription: SUB },
     { id: "k1", name: "Мой hysteria2", link: "", subscription: null as string | null },
   ],
-  subscriptions: [{ url: SUB, name: "Friends VPN" }],
+  subscriptions: [
+    { url: SUB, name: "Friends VPN", usage: { used: 12.4e9, total: 50e9, expire: Math.floor(Date.now() / 1000) + 20 * 86400 } },
+  ],
   selected: "a1" as string | null,
   mode: "tun",
   autostart: false,
   language: null as string | null,
+  auto_select: false,
   rules: {
     final_route: "direct",
     proxy_apps: [{ name: "Telegram", package: "org.telegram.messenger" }],
@@ -84,6 +87,13 @@ mockIPC((cmd, args) => {
       return linkOnce ? null : ((linkOnce = true), "https://panel.example.org/sub/abc");
     case "scan_qr":
       return "hy2://pass@hy.example.org:443#%F0%9F%87%A9%F0%9F%87%AA%20QR";
+    case "set_auto_select":
+      settings.auto_select = a.on;
+      return copy();
+    case "auto_server":
+      return state === "started" ? "a2" : null;
+    case "refresh_stale_subscriptions":
+      return null;
     case "set_system_bars":
       return null;
     case "set_language":

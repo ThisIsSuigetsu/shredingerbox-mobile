@@ -20,6 +20,27 @@ pub struct Server {
 pub struct Subscription {
     pub url: String,
     pub name: String,
+    /// Расход и срок из заголовка `subscription-userinfo`, если панель его присылает.
+    #[serde(default)]
+    pub usage: Option<SubUsage>,
+    /// Когда подписку последний раз скачали (секунды Unix) - для автообновления.
+    #[serde(default)]
+    pub updated: Option<u64>,
+}
+
+/// Трафик подписки: байты использовано и всего (0 - без лимита), срок (0 - бессрочно).
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SubUsage {
+    pub used: u64,
+    pub total: u64,
+    pub expire: u64,
+}
+
+pub fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// TUN - VPN для всего телефона по правилам. Прокси - без VPN: ядро слушает
@@ -92,6 +113,8 @@ pub struct Settings {
     pub rules: Rules,
     /// "ru" или "en"; None - ещё не выбран, интерфейс возьмёт язык системы.
     pub language: Option<String>,
+    /// Ядро само выбирает сервер с наименьшим пингом (urltest) вместо выбранного вручную.
+    pub auto_select: bool,
 }
 
 pub fn new_id() -> String {
@@ -161,10 +184,15 @@ impl Settings {
     }
 
     /// Добавить подписку или обновить её название.
-    pub fn upsert_subscription(&mut self, url: &str, name: &str) {
+    pub fn upsert_subscription(&mut self, url: &str, name: &str, usage: Option<SubUsage>) {
+        let updated = Some(now_secs());
         match self.subscriptions.iter_mut().find(|s| s.url == url) {
-            Some(sub) => sub.name = name.to_string(),
-            None => self.subscriptions.push(Subscription { url: url.to_string(), name: name.to_string() }),
+            Some(sub) => {
+                sub.name = name.to_string();
+                sub.usage = usage;
+                sub.updated = updated;
+            }
+            None => self.subscriptions.push(Subscription { url: url.to_string(), name: name.to_string(), usage, updated }),
         }
     }
 
@@ -231,7 +259,7 @@ mod tests {
     #[test]
     fn merge_keeps_ids_and_selection() {
         let mut s = Settings::default();
-        s.upsert_subscription("https://sub", "Моя");
+        s.upsert_subscription("https://sub", "Моя", None);
         s.merge_subscription("https://sub", vec![A.into(), B.into()]);
         let b_id = s.servers[1].id.clone();
         s.selected = Some(b_id.clone());
@@ -245,7 +273,7 @@ mod tests {
     fn removing_selected_picks_first() {
         let mut s = Settings::default();
         s.add_keys(A).unwrap();
-        s.upsert_subscription("https://sub", "Моя");
+        s.upsert_subscription("https://sub", "Моя", None);
         s.merge_subscription("https://sub", vec![B.into()]);
         let b_id = s.servers[1].id.clone();
         s.selected = Some(b_id);

@@ -32,9 +32,13 @@ fn dedup(mut v: Vec<String>) -> Vec<String> {
     v
 }
 
+/// Тег outbound'а, который сам выбирает лучший сервер (urltest).
+pub const AUTO_TAG: &str = "auto";
+
 /// `servers` - разобранные серверы как (тег, outbound), `selected_tag` - текущий.
-/// Над ними строится селектор `proxy`, как на десктопе.
-pub fn build(mode: Mode, rules: &Rules, servers: &[(String, Value)], selected_tag: &str, api: &Api) -> Value {
+/// Над ними строится селектор `proxy`, как на десктопе. С `auto` селектор по умолчанию
+/// смотрит на urltest: ядро само меряет пинг и держит самый быстрый сервер.
+pub fn build(mode: Mode, rules: &Rules, servers: &[(String, Value)], selected_tag: &str, auto: bool, api: &Api) -> Value {
     let mut domains = rules.proxy_domains.clone();
     domains.extend(presets::domains_for(&rules.presets));
     let domains = dedup(domains);
@@ -110,13 +114,30 @@ pub fn build(mode: Mode, rules: &Rules, servers: &[(String, Value)], selected_ta
         }),
     };
 
+    let tags: Vec<String> = servers.iter().map(|(tag, _)| tag.clone()).collect();
+    let mut choices = tags.clone();
+    if auto {
+        choices.insert(0, AUTO_TAG.to_string());
+    }
     let mut outbounds: Vec<Value> = vec![json!({
         "type": "selector",
         "tag": "proxy",
-        "outbounds": servers.iter().map(|(tag, _)| tag.clone()).collect::<Vec<_>>(),
-        "default": selected_tag,
+        "outbounds": choices,
+        "default": if auto { AUTO_TAG } else { selected_tag },
         "interrupt_exist_connections": true
     })];
+    if auto {
+        outbounds.push(json!({
+            "type": "urltest",
+            "tag": AUTO_TAG,
+            "outbounds": tags,
+            "url": "https://www.gstatic.com/generate_204",
+            "interval": "3m",
+            // Не прыгать между серверами из-за пары миллисекунд.
+            "tolerance": 50,
+            "interrupt_exist_connections": true
+        }));
+    }
     for (tag, ob) in servers {
         let mut ob = ob.clone();
         ob["tag"] = json!(tag);
@@ -171,7 +192,7 @@ mod tests {
     #[test]
     fn selector_tun_and_api() {
         let rules = Rules { final_route: FinalRoute::Proxy, presets: vec![], ..Rules::default() };
-        let c = build(Mode::Tun, &rules, &one(), "srv-a", &api());
+        let c = build(Mode::Tun, &rules, &one(), "srv-a", false, &api());
         assert_eq!(c["outbounds"][0]["type"], "selector");
         assert_eq!(c["outbounds"][0]["default"], "srv-a");
         assert_eq!(c["outbounds"][1]["tag"], "srv-a");
@@ -197,7 +218,7 @@ mod tests {
             direct_domains: vec!["госуслуги.рф".into()],
             presets: vec!["discord".into()],
         };
-        let c = build(Mode::Tun, &rules, &one(), "srv-a", &api());
+        let c = build(Mode::Tun, &rules, &one(), "srv-a", false, &api());
         assert_eq!(c["route"]["final"], "direct");
         assert_eq!(c["dns"]["final"], "dns-local");
         assert_eq!(c["inbounds"][0]["exclude_package"], json!(["ru.bank"]));
@@ -218,7 +239,7 @@ mod tests {
             direct_apps: vec![AppRule { name: "Банк".into(), package: "ru.bank".into() }],
             ..Rules::default()
         };
-        let c = build(Mode::Proxy, &rules, &one(), "srv-a", &api());
+        let c = build(Mode::Proxy, &rules, &one(), "srv-a", false, &api());
         let inbounds = c["inbounds"].as_array().unwrap();
         assert_eq!(inbounds.len(), 1);
         assert_eq!(inbounds[0]["type"], "mixed");
@@ -226,5 +247,18 @@ mod tests {
         assert_eq!(inbounds[0]["listen_port"], PROXY_PORT);
         let text = c.to_string();
         assert!(!text.contains("package_name") && !text.contains("exclude_package"));
+    }
+
+    #[test]
+    fn auto_select_uses_urltest() {
+        let two = vec![
+            ("srv-a".to_string(), json!({ "type": "vless", "server": "a" })),
+            ("srv-b".to_string(), json!({ "type": "vless", "server": "b" })),
+        ];
+        let c = build(Mode::Tun, &Rules::default(), &two, "srv-b", true, &api());
+        assert_eq!(c["outbounds"][0]["outbounds"], json!(["auto", "srv-a", "srv-b"]));
+        assert_eq!(c["outbounds"][0]["default"], "auto");
+        assert_eq!(c["outbounds"][1]["type"], "urltest");
+        assert_eq!(c["outbounds"][1]["outbounds"], json!(["srv-a", "srv-b"]));
     }
 }

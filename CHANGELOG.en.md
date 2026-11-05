@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+- A subscription shows how much traffic is left and until when it is valid - if the panel
+  reports it. When traffic or time is running out, the line is highlighted.
+- Subscriptions refresh by themselves on launch if more than 12 hours have passed: new servers
+  and addresses from the panel show up without pressing a button.
+- "Best server automatically" in "Settings": the app picks the server with the lowest ping and
+  switches if it stops responding.
+
 ## 0.6.0
 
 - Light theme. By default it follows the system, and you can pick one in "Settings" → "Theme".

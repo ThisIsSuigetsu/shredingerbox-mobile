@@ -38,6 +38,7 @@ Requires Android 7 or newer on 64-bit ARM - that is almost every phone from rece
 - **Core log** with copying - useful if something does not work.
 - English and Russian: follows the phone language, or pick one in the settings.
 - Light and dark theme, sorting servers by ping.
+- Traffic left and expiry of a subscription, automatic subscription refresh, "Best server automatically".
 
 There is no iPhone client yet - see [the roadmap](#roadmap). A subscription works in ready-made
 sing-box and Xray clients.
@@ -51,6 +52,7 @@ sing-box and Xray clients.
 - [x] Signed APK built in GitHub Actions, self-update from GitHub releases.
 - [x] English language (0.5.0).
 - [x] Light theme and sorting servers by ping (0.6.0).
+- [x] Subscription traffic left, automatic subscription refresh, best server automatically (0.7.0).
 - [ ] A week or two without breakage - version 1.0.0.
 - [ ] iOS - postponed: a VPN on iPhone needs a paid Apple Developer account (a free Apple ID does
   not allow Network Extension).

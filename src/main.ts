@@ -22,9 +22,17 @@ interface Server {
   link: string;
   subscription: string | null;
 }
+interface SubUsage {
+  used: number;
+  /** 0 - без лимита. */
+  total: number;
+  /** Секунды Unix, 0 - бессрочно. */
+  expire: number;
+}
 interface Subscription {
   url: string;
   name: string;
+  usage: SubUsage | null;
 }
 interface AppRule {
   name: string;
@@ -46,6 +54,7 @@ interface Settings {
   autostart: boolean;
   rules: Rules;
   language: Lang | null;
+  auto_select: boolean;
 }
 interface UpdateInfo {
   version: string;
@@ -138,6 +147,7 @@ const st = {
     mode: "tun",
     autostart: false,
     language: null,
+    auto_select: false,
     rules: { final_route: "direct", proxy_apps: [], direct_apps: [], proxy_domains: [], direct_domains: [], presets: [] },
   } as Settings,
   state: "stopped" as State,
@@ -158,6 +168,8 @@ const st = {
   folded: { mode: readFlag(FOLD_KEYS.mode), log: readFlag(FOLD_KEYS.log) } as Record<Fold, boolean>,
   /** Серверы по возрастанию пинга, а не в порядке подписки. */
   sortByPing: readFlag(SORT_KEY),
+  /** Сервер, который сейчас держит «Авто» (id), - пока VPN включён. */
+  autoId: null as string | null,
   theme: readTheme(),
   /** Расход по серверам за текущий месяц и скорость. */
   usage: { month: "", servers: {}, speed: { up: 0, down: 0 } } as MonthTraffic,
@@ -259,7 +271,7 @@ async function refreshUsage() {
 
 /** «1,2 ГБ за ноябрь» - расход текущего сервера. */
 function monthText(): string {
-  const srv = selectedServer();
+  const srv = currentServer();
   const short = srv ? usageShort(srv.id) : "";
   return short ? `${short} ${L("за", "in")} ${monthName(st.usage.month)}` : "";
 }
@@ -292,6 +304,41 @@ const errText = (e: unknown) => (typeof e === "string" ? e : (e as Error)?.messa
 function selectedServer(): Server | undefined {
   const s = st.settings;
   return s.servers.find((x) => x.id === s.selected) ?? s.servers[0];
+}
+
+/** Сервер, через который идёт трафик: при «Авто» его выбирает ядро. */
+function currentServer(): Server | undefined {
+  if (!st.settings.auto_select) return selectedServer();
+  return st.settings.servers.find((x) => x.id === st.autoId);
+}
+
+const DAY = 24 * 60 * 60;
+
+/** «12 ГБ из 50 ГБ · до 1 декабря» и пора ли предупредить: мало трафика или срок на исходе. */
+function subUsage(u: SubUsage | null): { text: string; warn: boolean } | null {
+  if (!u) return null;
+  const parts: string[] = [];
+  let warn = false;
+  if (u.total > 0) {
+    parts.push(`${bytes(u.used)} ${L("из", "of")} ${bytes(u.total)}`);
+    warn ||= u.used >= u.total * 0.9;
+  } else if (u.used > 0) {
+    parts.push(`${bytes(u.used)} · ${L("без лимита", "unlimited")}`);
+  }
+  if (u.expire > 0) {
+    const left = u.expire - Date.now() / 1000;
+    const date = new Date(u.expire * 1000);
+    const sameYear = date.getFullYear() === new Date().getFullYear();
+    const day = date.toLocaleDateString(locale(), { day: "numeric", month: "long", ...(sameYear ? {} : { year: "numeric" }) });
+    parts.push(left <= 0 ? L("срок истёк", "expired") : `${L("до", "until")} ${day}`);
+    warn ||= left <= 3 * DAY;
+  }
+  return parts.length ? { text: parts.join(" · "), warn } : null;
+}
+
+function subUsageView(u: SubUsage | null, cls = "sub-usage"): string {
+  const x = subUsage(u);
+  return x ? `<span class="${cls}${x.warn ? " warn" : ""}">${esc(x.text)}</span>` : "";
 }
 
 function mood(): Mood {
@@ -404,7 +451,7 @@ function ordered(list: Server[]): Server[] {
 
 function serverRow(x: Server, removable: boolean): string {
   const f = splitFlag(x.name);
-  const on = x.id === selectedServer()?.id;
+  const on = x.id === currentServer()?.id;
   return `<div class="server${on ? " on" : ""}">
     <button class="server-pick" data-action="select" data-id="${esc(x.id)}" aria-pressed="${on}">
       <span class="flag">${esc(f.code)}</span><span class="name">${esc(f.name)}</span>${usageView(x.id)}${pingView(x.id)}
@@ -415,7 +462,7 @@ function serverRow(x: Server, removable: boolean): string {
 
 function homeView(): string {
   const s = st.settings;
-  const srv = selectedServer();
+  const srv = currentServer();
   const on = st.state === "started";
   const working = st.busy || st.state === "starting" || st.state === "stopping";
   const title = st.state === "starting"
@@ -426,9 +473,13 @@ function homeView(): string {
         ? L("Подключено", "Connected")
         : L("Не подключено", "Not connected");
   const flag = srv ? splitFlag(srv.name) : null;
-  const sub = srv
-    ? `<span class="flag">${esc(flag!.code)}</span><span class="cur-name">${esc(flag!.name)}</span>${st.pings[srv.id] ? pingView(srv.id) : ""}`
-    : L("Добавьте сервер, чтобы подключиться", "Add a server to connect");
+  const autoChip = s.auto_select ? `<span class="flag auto">${L("АВТО", "AUTO")}</span>` : "";
+  const sub = !s.servers.length
+    ? L("Добавьте сервер, чтобы подключиться", "Add a server to connect")
+    : srv
+      ? `${autoChip}<span class="flag">${esc(flag!.code)}</span><span class="cur-name">${esc(flag!.name)}</span>${st.pings[srv.id] ? pingView(srv.id) : ""}`
+      : `${autoChip}<span class="cur-name">${L("Лучший сервер выберется при подключении", "The best server is picked when you connect")}</span>`;
+  const subInfo = subUsageView(s.subscriptions.find((x) => x.url === srv?.subscription)?.usage ?? null, "status-month");
   const servers = s.servers.length
     ? ordered(s.servers).map((x) => serverRow(x, false)).join("")
     : `<div class="empty">${L(
@@ -446,6 +497,7 @@ function homeView(): string {
       <div class="status-title">${title}</div>
       <div class="status-sub">${sub}</div>
       <div class="status-month" id="usage-month">${esc(monthText())}</div>
+      ${subInfo}
       ${on ? speedsView() : ""}
     </section>
     <section class="card fold${st.folded.mode ? " folded" : ""}">
@@ -482,6 +534,7 @@ function serversView(): string {
         <div class="sub-title">
           <h2>${esc(sub.name)} <span class="count">· ${list.length}</span></h2>
           <span class="muted mono">${esc(host(sub.url))}</span>
+          ${subUsageView(sub.usage)}
         </div>
         <div class="row">
           <button class="x-btn" data-action="refresh-subs" aria-label="${L("Обновить подписки", "Refresh subscriptions")}">${icon.refresh}</button>
@@ -613,6 +666,16 @@ function settingsView(): string {
     <section class="card">
       <h2>${L("Тема", "Theme")}</h2>
       <div class="seg" role="group" aria-label="${L("Тема", "Theme")}">${themeOpt("system", L("Как в системе", "System"))}${themeOpt("light", L("Светлая", "Light"))}${themeOpt("dark", L("Тёмная", "Dark"))}</div>
+    </section>
+    <section class="card">
+      <h2>${L("Серверы", "Servers")}</h2>
+      <div class="set-row">
+        <div class="t"><b>${L("Лучший сервер автоматически", "Best server automatically")}</b><span>${L(
+          "Приложение само выбирает сервер с самым низким пингом и переключается, если он перестал отвечать",
+          "The app picks the server with the lowest ping and switches if it stops responding",
+        )}</span></div>
+        <button class="switch ${st.settings.auto_select ? "on" : ""}" data-action="toggle-auto" role="switch" aria-checked="${st.settings.auto_select}" aria-label="${L("Лучший сервер автоматически", "Best server automatically")}"><span></span></button>
+      </div>
     </section>
     <section class="card">
       <h2>${L("Запуск", "Startup")}</h2>
@@ -779,6 +842,21 @@ async function pingAll() {
   }
 }
 
+let autoTick = 0;
+
+/** Ядро могло переключить «Авто» на другой сервер - показываем, какой сейчас. */
+async function refreshAuto() {
+  try {
+    const id = await invoke<string | null>("auto_server");
+    if (id !== st.autoId) {
+      st.autoId = id;
+      render();
+    }
+  } catch {
+    // Узнаем в следующий раз.
+  }
+}
+
 async function poll() {
   try {
     const s = await invoke<Status>("vpn_status");
@@ -791,6 +869,11 @@ async function poll() {
     }
     // Пока подключены, счётчик в Rust растёт каждую секунду.
     if (st.state === "started") refreshUsage();
+    if (st.settings.auto_select && st.state === "started" && ++autoTick % 3 === 1) refreshAuto();
+    if (st.state !== "started" && st.autoId) {
+      st.autoId = null;
+      render();
+    }
   } catch (e) {
     toast(errText(e), true);
   }
@@ -866,6 +949,12 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       });
     case "select": {
       const id = el.dataset.id!;
+      if (s.auto_select) {
+        return toast(L(
+          "Сервер выбирается автоматически. Чтобы выбрать вручную, выключите «Лучший сервер автоматически» в настройках.",
+          "The server is picked automatically. To choose one yourself, turn off \"Best server automatically\" in Settings.",
+        ));
+      }
       if (id === selectedServer()?.id) return;
       // Сразу отмечаем выбор, не дожидаясь ответа ядра.
       s.selected = id;
@@ -1084,6 +1173,19 @@ async function onAction(action: string, el: HTMLElement, ev: Event) {
       render();
       return applyLang(next);
     }
+    case "toggle-auto": {
+      const on = !s.auto_select;
+      s.auto_select = on;
+      st.autoId = null;
+      return act(async () => {
+        try {
+          st.settings = await invoke<Settings>("set_auto_select", { on });
+        } catch (e) {
+          st.settings = await invoke<Settings>("get_settings");
+          throw e;
+        }
+      });
+    }
     case "sort-ping":
       st.sortByPing = !st.sortByPing;
       writePref(SORT_KEY, st.sortByPing ? "1" : "");
@@ -1266,6 +1368,20 @@ applyTheme();
 
 // ---------- запуск ----------
 
+/** Подписки старше 12 часов обновляются сами - тихо, без ошибок на экране. */
+async function refreshStale() {
+  if (!st.settings.subscriptions.length) return;
+  try {
+    const fresh = await invoke<Settings | null>("refresh_stale_subscriptions");
+    if (!fresh) return;
+    st.settings = fresh;
+    render();
+    pingAll();
+  } catch {
+    // Нет сети - обновим в следующий раз.
+  }
+}
+
 /** Сообщить язык Rust и Android-части (уведомление, плитка, ошибки) и запомнить его. */
 async function applyLang(l: Lang) {
   try {
@@ -1318,6 +1434,7 @@ async function migrateOldKey() {
   // Сразу после запуска окно может ещё не получить фокус - буфер вернёт пусто.
   // Сначала «Что нового»: буфер обмена и ссылка подождут, пока окно закроют.
   checkWhatsNew();
+  refreshStale();
   setTimeout(onReturn, 700);
   // Буфер обмена важнее: обновление предложим, только если окно ещё свободно.
   setTimeout(checkUpdate, 2500);
