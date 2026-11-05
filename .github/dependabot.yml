@@ -1,0 +1,14 @@
+# Раз в месяц GitHub проверяет новые версии действий в workflow и открывает pull request
+# с новым хешем коммита. Сами действия не обновляются: изменение попадает в сборку,
+# только когда pull request примут.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "Actions"
