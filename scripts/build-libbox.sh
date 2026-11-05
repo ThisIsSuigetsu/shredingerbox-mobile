@@ -10,6 +10,10 @@ set -euo pipefail
 
 # Та же версия ядра, что и в десктопном клиенте.
 SING_BOX_VERSION="v1.14.4"
+# Коммит этой метки. Метку на GitHub можно перевесить на другой коммит - тогда сборка
+# остановится, а не соберёт ядро из чужого кода. Новая версия: git ls-remote --tags
+# https://github.com/SagerNet/sing-box.git <метка> и сверить с релизом на GitHub.
+SING_BOX_COMMIT="c005f35300ce76427dc285481ec5695f5b179cd2"
 ARCHS="${ARCHS:-arm64,arm,amd64,386}"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,6 +26,12 @@ if [ ! -d "$src/.git" ]; then
 elif [ "$(git -C "$src" describe --tags)" != "$SING_BOX_VERSION" ]; then
   git -C "$src" fetch --depth 1 origin tag "$SING_BOX_VERSION"
   git -C "$src" -c advice.detachedHead=false checkout "$SING_BOX_VERSION"
+fi
+
+actual="$(git -C "$src" rev-parse HEAD)"
+if [ "$actual" != "$SING_BOX_COMMIT" ]; then
+  echo "sing-box $SING_BOX_VERSION: коммит $actual, а ждали $SING_BOX_COMMIT - сборка остановлена" >&2
+  exit 1
 fi
 
 cd "$src"

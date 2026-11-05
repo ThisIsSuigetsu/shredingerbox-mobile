@@ -8,6 +8,7 @@
   and addresses from the panel show up without pressing a button.
 - "Best server automatically" in "Settings": the app picks the server with the lowest ping and
   switches if it stops responding.
+- Minor fixes.
 
 ## 0.6.0
 
