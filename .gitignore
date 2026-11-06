@@ -14,4 +14,3 @@ src-tauri/gen/android/app/libs/
 src-tauri/gen/schemas/
 .kotlin/
 /build/
-.claude/
